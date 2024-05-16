@@ -73,7 +73,7 @@ def pywebio_main():
                     vms = [vm for vm in vms if '-Template' not in vm.get('name', '')]
                     # Sort the VMs by CPU load in descending order
                     vms.sort(key=lambda vm: vm.get('cpu', 0), reverse=True)
-
+                    
                     table_data = [["VMID", "Name", "Status", "Memory", "CPU"]]
                     for vm in vms:
                         max_memory = format_memory(vm.get('maxmem'))
@@ -97,7 +97,7 @@ def pywebio_main():
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'Create Multiple VMs':
                 num_vms = input("Enter number of VMs to create", type=NUMBER)
-
+                
                 # List available templates
                 vms = pve.list_vms()
                 if isinstance(vms, list):
@@ -105,11 +105,11 @@ def pywebio_main():
                     template_options = [f"{vm.get('name')} (ID: {vm.get('vmid')})" for vm in templates]
                     selected_template = checkbox("Select a template for the VMs", options=template_options, required=True)[0]
                     selected_template_id = int(selected_template.split("ID: ")[1].rstrip(")"))
-
+                    
                     # Input fields for VM names
                     vm_name_fields = [input(f"Enter name for VM {i + 1}", name=f'vm_name_{i}') for i in range(num_vms)]
                     vm_details = input_group("Enter names for the VMs", vm_name_fields)
-
+                    
                     for i in range(num_vms):
                         vm_name = vm_details[f'vm_name_{i}']
                         pve.create_training_seat(TrainingSeat(name=vm_name), selected_template_id)
