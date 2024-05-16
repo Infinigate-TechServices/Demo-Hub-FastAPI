@@ -32,7 +32,7 @@ def list_vms():
     return pve.list_vms()
 
 # Mounting PyWebIO app
-app.mount("/pywebio", asgi_app(pywebio_main), name="pywebio")
+app.mount("/", asgi_app(pywebio_main), name="pywebio")
 
 if __name__ == "__main__":
     import uvicorn
