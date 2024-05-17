@@ -26,7 +26,6 @@ def pve_management():
             put_table(table_data)
         else:
             put_error("Failed to retrieve VMs.")
-        put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
     elif pve_choice == 'List Templates':
         response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
         if response.status_code == 200:
@@ -39,7 +38,6 @@ def pve_management():
             put_table(table_data)
         else:
             put_error("Failed to retrieve templates.")
-        put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
     elif pve_choice == 'Create VMs':
         num_vms = input("Enter number of VMs to create", type=NUMBER)
         
@@ -67,7 +65,6 @@ def pve_management():
             put_text("VMs created successfully!")
         else:
             put_error("Failed to retrieve templates.")
-        put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
     elif pve_choice == 'Remove VMs':
         response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
         if response.status_code == 200:
@@ -83,7 +80,6 @@ def pve_management():
             put_text("Selected VMs deleted successfully!")
         else:
             put_error("Failed to retrieve VMs.")
-        put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
     elif pve_choice == 'Return to Main Menu':
         run_js('location.reload()')
 
