@@ -1,5 +1,5 @@
 from proxmoxer import ProxmoxAPI
-from models import TrainingSeat
+from models import TrainingSeat, VM
 import os
 from dotenv import load_dotenv
 import time
@@ -74,13 +74,15 @@ def evaluate_nodes():
 
     return best_node
 
-def create_training_seat(seat: TrainingSeat, template_id: int):
+def create_training_seat(name: str, template_id: int):
     best_node = evaluate_nodes()
     if not best_node:
         return {"error": "No suitable node found"}
 
-    vmid = proxmox.nodes(best_node).qemu().get('nextid')
-    return proxmox.nodes(best_node).qemu(template_id).clone.create(newid=vmid, name=seat.name, full=True)
+    # Ensure vmid is an integer
+    vmid = int(proxmox.nodes(best_node).qemu().get('nextid'))
+    return proxmox.nodes(best_node).qemu().post('clone', vmid=template_id, newid=vmid, name=name, full=True)
+
 
 def remove_training_seat(seat: TrainingSeat):
     for node in proxmox_nodes:

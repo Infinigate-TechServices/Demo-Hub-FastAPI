@@ -9,6 +9,10 @@ class RecordA(BaseModel):
 class TrainingSeat(BaseModel):
     name: str
 
+class VM(BaseModel):
+    name: str
+    template_id: Optional[int]
+
 class ProxyHost(BaseModel):
     domain_names: List[str]
     forward_host: str

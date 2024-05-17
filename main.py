@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost
+from models import RecordA, TrainingSeat, ProxyHost, VM
 import cf
 import pve
-from nginx_proxy_manager import list_proxy_hosts create_proxy_host remove_proxy_host
+from nginx_proxy_manager import list_proxy_hosts, create_proxy_host, remove_proxy_host
 from pywebio_app import pywebio_main
 
 app = FastAPI()
@@ -23,8 +23,8 @@ def list_seats():
 
 # PVE endpoints
 @app.post("/api/v1/pve/create-training-seat")
-def create_training_seat(seat: TrainingSeat, template_id: int):
-    return pve.create_training_seat(seat, template_id)
+def create_training_seat(vm: VM):
+    return pve.create_training_seat(vm.name, vm.template_id)
 
 @app.post("/api/v1/pve/remove-training-seat")
 def remove_training_seat(seat: TrainingSeat):
