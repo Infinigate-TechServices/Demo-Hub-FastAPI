@@ -9,16 +9,18 @@ def pywebio_main():
     while True:
         choice = actions('Choose an option', ['DNS Management', 'PVE Management'])
         if choice == 'DNS Management':
-            dns_choice = actions('Choose DNS action', ['Create Record', 'Remove Record', 'List Records', 'List Training Records'])
+            dns_choice = actions('Choose DNS action', [
+                'Create Record', 'Remove Record', 'List Records', 'List Training Records', 'Return to Main Menu'
+            ])
             if dns_choice == 'Create Record':
                 domain = input("Enter domain")
                 ip = input("Enter IP")
                 cf.create_record_a(RecordA(domain=domain, ip=ip))
-                put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
+                put_text("Record created successfully!")
             elif dns_choice == 'Remove Record':
                 record_id = input("Enter Record ID")
                 cf.remove_record_a(RecordA(id=record_id))
-                put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
+                put_text("Record removed successfully!")
             elif dns_choice == 'List Records':
                 records = cf.list_seats()
                 if isinstance(records, list):
@@ -34,7 +36,6 @@ def pywebio_main():
                     put_table(table_data)
                 else:
                     put_error("Failed to retrieve DNS records.")
-                put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif dns_choice == 'List Training Records':
                 records = cf.list_seats()
                 if isinstance(records, list):
@@ -52,19 +53,26 @@ def pywebio_main():
                     put_table(table_data)
                 else:
                     put_error("Failed to retrieve DNS records.")
-                put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
+            put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
+            if dns_choice == 'Return to Main Menu':
+                continue
+
         elif choice == 'PVE Management':
-            pve_choice = actions('Choose PVE action', ['Create VM', 'Remove VM', 'List VMs', 'List Templates', 'Create Multiple VMs', 'Delete Multiple VMs'])
+            pve_choice = actions('Choose PVE action', [
+                'Create VM', 'Remove VM', 'List VMs', 'List Templates', 'Create Multiple VMs', 'Delete Multiple VMs', 'Return to Main Menu'
+            ])
             if pve_choice == 'Create VM':
                 vm_details = input_group("Enter VM details", [
                     input("Enter VM name", name='name'),
                     input("Enter Template ID", name='template_id', type=NUMBER)
                 ])
                 pve.create_training_seat(TrainingSeat(name=vm_details['name']), vm_details['template_id'])
+                put_text("VM created successfully!")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'Remove VM':
                 name = input("Enter VM name")
                 pve.remove_training_seat(TrainingSeat(name=name))
+                put_text("VM removed successfully!")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'List VMs':
                 vms = pve.list_vms()
@@ -130,6 +138,8 @@ def pywebio_main():
                 else:
                     put_error("Failed to retrieve VMs.")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
+            elif pve_choice == 'Return to Main Menu':
+                continue
 
 def format_memory(mem):
     # Convert memory from bytes to GB
