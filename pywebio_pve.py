@@ -74,7 +74,8 @@ def pve_management():
             vm_names = [vm.get('name') for vm in vms]
             selected_vms = checkbox("Select VMs to delete", options=vm_names)
             for vm_name in selected_vms:
-                response = requests.post(f"{API_BASE_URL}/v1/pve/remove-training-seat", json={"name": vm_name})
+                #response = requests.post(f"{API_BASE_URL}/v1/pve/remove-training-seat", json={"name": vm_name})
+                response = requests.post(f"{API_BASE_URL}/v1/pve/remove-vm", json={"name": vm_name})
                 if response.status_code != 200:
                     put_error(f"Failed to remove VM {vm_name}.")
             put_text("Selected VMs deleted successfully!")

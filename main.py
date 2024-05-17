@@ -30,6 +30,10 @@ def create_training_seat(vm: VM):
 def remove_training_seat(seat: TrainingSeat):
     return pve.remove_training_seat(seat)
 
+@app.post("/api/v1/pve/remove-vm")
+def remove_vm(vm: VM):
+    return pve.remove_vm(vm.name)
+
 @app.get("/api/v1/pve/list-vms")
 def list_vms():
     return pve.list_vms()

@@ -81,8 +81,7 @@ def create_training_seat(name: str, template_id: int):
 
     # Correctly get the next available VMID
     vmid = proxmox.cluster.nextid.get()
-    return proxmox.nodes(best_node).qemu().post('clone', vmid=template_id, newid=vmid, name=name, full=True)
-
+    return proxmox.nodes(best_node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=1)
 
 def remove_training_seat(seat: TrainingSeat):
     for node in proxmox_nodes:
@@ -93,9 +92,29 @@ def remove_training_seat(seat: TrainingSeat):
                 return proxmox.nodes(node).qemu(vmid).delete()
     return {"error": "VM not found"}
 
+def remove_vm(vm: VM):
+    vmid = get_vm_id(vm.name)
+    if vmid is not None:
+        for node in proxmox_nodes:
+            try:
+                proxmox.nodes(node).qemu(vmid).delete()
+                return f"VM '{vm.name}' with ID {vm.id} has been removed."
+            except Exception as e:
+                continue
+        return f"Failed to remove VM '{vm.name}'."
+    else:
+        return f"VM '{vm.name}' not found."
+ 
 def list_vms():
     vms_list = []
     for node in proxmox_nodes:
         vms = proxmox.nodes(node).qemu().get()
         vms_list.extend(vms)
     return vms_list
+
+def get_vm_id(vm: VM):
+    vms = list_vms()
+    for vm in vms:
+        if vm['name'] == vm.name:
+            return vm['vmid']
+    return None
