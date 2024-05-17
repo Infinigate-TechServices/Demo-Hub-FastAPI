@@ -1,10 +1,10 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import List, Optional
 
 class RecordA(BaseModel):
     domain: Optional[str] = None
     ip: Optional[str] = None
-    id: Optional[str] = None
+    id: str = None
 
 class TrainingSeat(BaseModel):
     name: str
@@ -13,18 +13,19 @@ class ProxyHost(BaseModel):
     domain_names: List[str]
     forward_host: str
     forward_port: int
-    access_list_id: int = 0
-    certificate_id: int = 0
-    ssl_forced: int = 0
-    caching_enabled: int = 0
-    block_exploits: int = 0
-    advanced_config: str = ""
-    allow_websocket_upgrade: int = 0
-    http2_support: int = 0
+    access_list_id: Optional[int] = None
+    certificate_id: Optional[int] = None
+    ssl_forced: Optional[bool] = False
+    caching_enabled: Optional[bool] = False
+    block_exploits: Optional[bool] = False
+    advanced_config: Optional[str] = ""
+    allow_websocket_upgrade: Optional[bool] = False
+    http2_support: Optional[bool] = False
     forward_scheme: str = "http"
-    enabled: int = 1
-    locations: List[str] = []
-    hsts_enabled: int = 0
-    hsts_subdomains: int = 0
-    use_default_location: bool = True
-    ipv6: bool = True
+    enabled: Optional[bool] = True
+    hsts_enabled: Optional[bool] = False
+    hsts_subdomains: Optional[bool] = False
+    meta: Optional[dict] = None  # Optional additional metadata
+    locations: Optional[List[dict]] = None  # Optional locations config
+    created_on: Optional[str] = None
+    modified_on: Optional[str] = None

@@ -1,10 +1,9 @@
 from pywebio.input import actions, input, input_group, NUMBER, checkbox, TEXT
 from pywebio.output import put_text, put_table, put_error, put_buttons
-from pywebio.session import run_js, go_app
-from models import RecordA, TrainingSeat, ProxyHost
-import cf
-import pve
-from nginx_proxy_manager import list_proxy_hosts create_proxy_host remove_proxy_host
+from pywebio.session import run_js
+import requests
+
+API_BASE_URL = "http://localhost:8081/api"
 
 def pywebio_main():
     while True:
@@ -16,15 +15,22 @@ def pywebio_main():
             if dns_choice == 'Create Record':
                 domain = input("Enter domain")
                 ip = input("Enter IP")
-                cf.create_record_a(RecordA(domain=domain, ip=ip))
-                put_text("Record created successfully!")
+                response = requests.post(f"{API_BASE_URL}/v1/dns/create-record-a", json={"domain": domain, "ip": ip})
+                if response.status_code == 200:
+                    put_text("Record created successfully!")
+                else:
+                    put_error("Failed to create record.")
             elif dns_choice == 'Remove Record':
                 record_id = input("Enter Record ID")
-                cf.remove_record_a(RecordA(id=record_id))
-                put_text("Record removed successfully!")
+                response = requests.post(f"{API_BASE_URL}/v1/dns/remove-record-a", json={"id": record_id})
+                if response.status_code == 200:
+                    put_text("Record removed successfully!")
+                else:
+                    put_error("Failed to remove record.")
             elif dns_choice == 'List Records':
-                records = cf.list_seats()
-                if isinstance(records, list):
+                response = requests.get(f"{API_BASE_URL}/v1/dns/list-seats")
+                if response.status_code == 200:
+                    records = response.json()
                     table_data = [["ID", "Name", "Content", "TTL", "Comment"]]
                     for record in records:
                         table_data.append([
@@ -38,9 +44,9 @@ def pywebio_main():
                 else:
                     put_error("Failed to retrieve DNS records.")
             elif dns_choice == 'List Training Records':
-                records = cf.list_seats()
-                if isinstance(records, list):
-                    # Filter records for the subdomain student.infinigate-labs.com
+                response = requests.get(f"{API_BASE_URL}/v1/dns/list-seats")
+                if response.status_code == 200:
+                    records = response.json()
                     training_records = [record for record in records if record.get('name').endswith('student.infinigate-labs.com')]
                     table_data = [["ID", "Name", "Content", "TTL", "Comment"]]
                     for record in training_records:
@@ -67,17 +73,27 @@ def pywebio_main():
                     input("Enter VM name", name='name'),
                     input("Enter Template ID", name='template_id', type=NUMBER)
                 ])
-                pve.create_training_seat(TrainingSeat(name=vm_details['name']), vm_details['template_id'])
-                put_text("VM created successfully!")
+                response = requests.post(f"{API_BASE_URL}/v1/pve/create-training-seat", json={
+                    "name": vm_details['name'],
+                    "template_id": vm_details['template_id']
+                })
+                if response.status_code == 200:
+                    put_text("VM created successfully!")
+                else:
+                    put_error("Failed to create VM.")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'Remove VM':
                 name = input("Enter VM name")
-                pve.remove_training_seat(TrainingSeat(name=name))
-                put_text("VM removed successfully!")
+                response = requests.post(f"{API_BASE_URL}/v1/pve/remove-training-seat", json={"name": name})
+                if response.status_code == 200:
+                    put_text("VM removed successfully!")
+                else:
+                    put_error("Failed to remove VM.")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'List VMs':
-                vms = pve.list_vms()
-                if isinstance(vms, list):
+                response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
+                if response.status_code == 200:
+                    vms = response.json()
                     # Filter out templates
                     vms = [vm for vm in vms if '-Template' not in vm.get('name', '')]
                     # Sort the VMs by CPU load in descending order
@@ -93,8 +109,9 @@ def pywebio_main():
                     put_error("Failed to retrieve VMs.")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'List Templates':
-                vms = pve.list_vms()
-                if isinstance(vms, list):
+                response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
+                if response.status_code == 200:
+                    vms = response.json()
                     # Filter to get only templates
                     templates = [vm for vm in vms if '-Template' in vm.get('name', '')]
                     table_data = [["VMID", "Name"]]  # Removed Status, Memory, and CPU columns
@@ -108,8 +125,9 @@ def pywebio_main():
                 num_vms = input("Enter number of VMs to create", type=NUMBER)
                 
                 # List available templates
-                vms = pve.list_vms()
-                if isinstance(vms, list):
+                response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
+                if response.status_code == 200:
+                    vms = response.json()
                     templates = [vm for vm in vms if '-Template' in vm.get('name', '')]
                     template_options = [f"{vm.get('name')} (ID: {vm.get('vmid')})" for vm in templates]
                     selected_template = checkbox("Select a template for the VMs", options=template_options, required=True)[0]
@@ -121,20 +139,28 @@ def pywebio_main():
                     
                     for i in range(num_vms):
                         vm_name = vm_details[f'vm_name_{i}']
-                        pve.create_training_seat(TrainingSeat(name=vm_name), selected_template_id)
+                        response = requests.post(f"{API_BASE_URL}/v1/pve/create-training-seat", json={
+                            "name": vm_name,
+                            "template_id": selected_template_id
+                        })
+                        if response.status_code != 200:
+                            put_error(f"Failed to create VM {vm_name}.")
                     put_text("VMs created successfully!")
                 else:
                     put_error("Failed to retrieve templates.")
                 put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
             elif pve_choice == 'Delete Multiple VMs':
-                vms = pve.list_vms()
-                if isinstance(vms, list):
+                response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
+                if response.status_code == 200:
+                    vms = response.json()
                     # Filter out templates
                     vms = [vm for vm in vms if '-Template' not in vm.get('name', '')]
                     vm_names = [vm.get('name') for vm in vms]
                     selected_vms = checkbox("Select VMs to delete", options=vm_names)
                     for vm_name in selected_vms:
-                        pve.remove_training_seat(TrainingSeat(name=vm_name))
+                        response = requests.post(f"{API_BASE_URL}/v1/pve/remove-training-seat", json={"name": vm_name})
+                        if response.status_code != 200:
+                            put_error(f"Failed to remove VM {vm_name}.")
                     put_text("Selected VMs deleted successfully!")
                 else:
                     put_error("Failed to retrieve VMs.")
@@ -167,42 +193,52 @@ def pywebio_main():
                     input("IPv6", name="ipv6", type=NUMBER, value=1)
                 ])
                 domain_names = [domain.strip() for domain in data['domain_names'].split(',')]
-                proxy_host = ProxyHost(
-                    domain_names=domain_names,
-                    forward_host=data['forward_host'],
-                    forward_port=data['forward_port'],
-                    access_list_id=data['access_list_id'],
-                    certificate_id=data['certificate_id'],
-                    ssl_forced=data['ssl_forced'],
-                    caching_enabled=data['caching_enabled'],
-                    block_exploits=data['block_exploits'],
-                    advanced_config=data['advanced_config'],
-                    allow_websocket_upgrade=data['allow_websocket_upgrade'],
-                    http2_support=data['http2_support'],
-                    forward_scheme=data['forward_scheme'],
-                    enabled=data['enabled'],
-                    hsts_enabled=data['hsts_enabled'],
-                    hsts_subdomains=data['hsts_subdomains'],
-                    use_default_location=bool(data['use_default_location']),
-                    ipv6=bool(data['ipv6'])
-                )
-                result = create_proxy_host(proxy_host)
-                put_text("Proxy host created successfully!")
-                put_text(result)
-                put_buttons(['Return to Nginx Management'], [lambda: go_app('nginx_management', new_window=False)])
+                proxy_host = {
+                    "domain_names": domain_names,
+                    "forward_host": data['forward_host'],
+                    "forward_port": data['forward_port'],
+                    "access_list_id": data['access_list_id'] if data['access_list_id'] != 0 else None,
+                    "certificate_id": data['certificate_id'] if data['certificate_id'] != 0 else None,
+                    "ssl_forced": bool(data['ssl_forced']),
+                    "caching_enabled": bool(data['caching_enabled']),
+                    "block_exploits": bool(data['block_exploits']),
+                    "advanced_config": data['advanced_config'],
+                    "allow_websocket_upgrade": bool(data['allow_websocket_upgrade']),
+                    "http2_support": bool(data['http2_support']),
+                    "forward_scheme": data['forward_scheme'],
+                    "enabled": bool(data['enabled']),
+                    "hsts_enabled": bool(data['hsts_enabled']),
+                    "hsts_subdomains": bool(data['hsts_subdomains']),
+                    "meta": {},
+                    "locations": []
+                }
+                response = requests.post(f"{API_BASE_URL}/v1/nginx/create-proxy-host", json=proxy_host)
+                if response.status_code == 200:
+                    put_text("Proxy host created successfully!")
+                    put_text(response.json())
+                else:
+                    put_error("Failed to create proxy host.")
+                put_buttons(['Return to Nginx Management'], onclick=lambda _: run_js('location.reload()'))
             elif nginx_choice == 'Remove Proxy Host':
                 proxy_host_id = input("Enter Proxy Host ID to Remove", type=NUMBER)
-                result = remove_proxy_host(proxy_host_id)
-                put_text("Proxy host removed successfully!")
-                put_text(result)
-                put_buttons(['Return to Nginx Management'], [lambda: go_app('nginx_management', new_window=False)])
+                response = requests.delete(f"{API_BASE_URL}/v1/nginx/remove-proxy-host/{proxy_host_id}")
+                if response.status_code == 200:
+                    put_text("Proxy host removed successfully!")
+                    put_text(response.json())
+                else:
+                    put_error("Failed to remove proxy host.")
+                put_buttons(['Return to Nginx Management'], onclick=lambda _: run_js('location.reload()'))
             elif nginx_choice == 'List Proxy Hosts':
-                hosts = list_proxy_hosts()
-                table_data = [["ID", "Domain Names", "Forward Host", "Forward Port"]]
-                for host in hosts:
-                    table_data.append([host['id'], ', '.join(host['domain_names']), host['forward_host'], host['forward_port']])
-                put_table(table_data)
-                put_buttons(['Return to Nginx Management'], [lambda: go_app('nginx_management', new_window=False)])
+                response = requests.get(f"{API_BASE_URL}/v1/nginx/list-proxy-hosts")
+                if response.status_code == 200:
+                    hosts = response.json()
+                    table_data = [["ID", "Domain Names", "Forward Host", "Forward Port"]]
+                    for host in hosts:
+                        table_data.append([host['id'], ', '.join(host['domain_names']), host['forward_host'], host['forward_port']])
+                    put_table(table_data)
+                else:
+                    put_error("Failed to retrieve proxy hosts.")
+                put_buttons(['Return to Nginx Management'], onclick=lambda _: run_js('location.reload()'))
             elif nginx_choice == 'Return to Main Menu':
                 continue
 
