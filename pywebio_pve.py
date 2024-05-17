@@ -7,32 +7,9 @@ API_BASE_URL = "http://localhost:8081/api"
 
 def pve_management():
     pve_choice = actions('Choose PVE action', [
-        'Create VM', 'Remove VM', 'List VMs', 'List Templates', 'Create Multiple VMs', 'Delete Multiple VMs', 'Return to Main Menu'
+        'List VMs', 'List Templates', 'Create VMs', 'Remove VMs', 'Return to Main Menu'
     ])
-    
-    if pve_choice == 'Create VM':
-        vm_details = input_group("Enter VM details", [
-            input("Enter VM name", name='name'),
-            input("Enter Template ID", name='template_id', type=NUMBER)
-        ])
-        response = requests.post(f"{API_BASE_URL}/v1/pve/create-training-seat", json={
-            "name": vm_details['name'],
-            "template_id": vm_details['template_id']
-        })
-        if response.status_code == 200:
-            put_text("VM created successfully!")
-        else:
-            put_error("Failed to create VM.")
-        put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
-    elif pve_choice == 'Remove VM':
-        name = input("Enter VM name")
-        response = requests.post(f"{API_BASE_URL}/v1/pve/remove-training-seat", json={"name": name})
-        if response.status_code == 200:
-            put_text("VM removed successfully!")
-        else:
-            put_error("Failed to remove VM.")
-        put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
-    elif pve_choice == 'List VMs':
+    if pve_choice == 'List VMs':
         response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
         if response.status_code == 200:
             vms = response.json()
@@ -63,7 +40,7 @@ def pve_management():
         else:
             put_error("Failed to retrieve templates.")
         put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
-    elif pve_choice == 'Create Multiple VMs':
+    elif pve_choice == 'Create VMs':
         num_vms = input("Enter number of VMs to create", type=NUMBER)
         
         # List available templates
@@ -91,7 +68,7 @@ def pve_management():
         else:
             put_error("Failed to retrieve templates.")
         put_buttons(['Return to Main Menu'], onclick=lambda _: run_js('location.reload()'))
-    elif pve_choice == 'Delete Multiple VMs':
+    elif pve_choice == 'Remove VMs':
         response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
         if response.status_code == 200:
             vms = response.json()
