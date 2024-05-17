@@ -79,8 +79,8 @@ def create_training_seat(name: str, template_id: int):
     if not best_node:
         return {"error": "No suitable node found"}
 
-    # Ensure vmid is an integer
-    vmid = int(proxmox.nodes(best_node).qemu().get('nextid'))
+    # Correctly get the next available VMID
+    vmid = proxmox.cluster.nextid.get()
     return proxmox.nodes(best_node).qemu().post('clone', vmid=template_id, newid=vmid, name=name, full=True)
 
 
