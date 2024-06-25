@@ -1,6 +1,9 @@
 # pip install -r requirements.txt
 fastapi
+uvicorn
 pywebio
 python-dotenv
 cloudflare
 proxmoxer
+requests
+guacapy
