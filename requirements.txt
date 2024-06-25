@@ -6,4 +6,5 @@ python-dotenv
 cloudflare
 proxmoxer
 requests
-guacapy
+requests.toolbelt
+gql

@@ -4,7 +4,8 @@ from pywebio.output import put_buttons
 import pywebio_pve
 import pywebio_dns
 import pywebio_nginx
-import pywebio_guacamole  # Import the new Guacamole management module
+import pywebio_guacamole
+import pywebio_lldap
 
 def pywebio_main():
     while True:
@@ -12,8 +13,9 @@ def pywebio_main():
             'DNS Management', 
             'PVE Management', 
             'Nginx Proxy Management',
-            'Guacamole Management',  # Add the new option
-            'Exit'  # Add an exit option for better user experience
+            'Guacamole Management',
+            'LDAP Management',
+            'Exit'
         ])
         
         if choice == 'DNS Management':
@@ -26,7 +28,10 @@ def pywebio_main():
             pywebio_nginx.nginx_management()
         
         elif choice == 'Guacamole Management':
-            pywebio_guacamole.guac_management()  # Call the new Guacamole management function
+            pywebio_guacamole.guac_management()
+        
+        elif choice == 'LDAP Management':
+            pywebio_lldap.lldap_management()
         
         elif choice == 'Exit':
             break  # Exit the loop and end the application

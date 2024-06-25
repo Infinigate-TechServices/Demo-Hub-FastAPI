@@ -1,12 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest
 import cf
 import pve
 import guacamole
+import lldap
 from nginx_proxy_manager import list_proxy_hosts, create_proxy_host, remove_proxy_host
 from pywebio_app import pywebio_main
 import logging
+import traceback
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI()
@@ -89,6 +91,34 @@ async def list_guacamole_users():
         return users
     else:
         raise HTTPException(status_code=500, detail="Failed to retrieve users")
+
+# LLDAP endpoints
+@app.post("/api/v1/lldap/users")
+async def create_lldap_user(user: CreateUserInput):
+    try:
+        created_user = lldap.create_user(
+            id=user.id,
+            email=user.email,
+            displayName=user.displayName,
+            firstName=user.firstName,
+            lastName=user.lastName
+        )
+        return {"message": f"User {user.id} created successfully", "user": created_user}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/v1/lldap/users")
+async def list_lldap_users():
+    users = lldap.list_users()
+    return {"users": users}
+
+@app.delete("/api/v1/lldap/users/{user_id}")
+async def delete_lldap_user(user_id: str):
+    success = lldap.remove_user(user_id)
+    if success:
+        return {"message": f"User {user_id} deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="User not found or failed to delete")
 
 # Mounting PyWebIO app
 app.mount("/", asgi_app(pywebio_main), name="pywebio")

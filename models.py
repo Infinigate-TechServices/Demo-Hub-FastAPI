@@ -33,3 +33,13 @@ class ProxyHost(BaseModel):
     locations: Optional[List[dict]] = None  # Optional locations config
     created_on: Optional[str] = None
     modified_on: Optional[str] = None
+
+class CreateUserInput(BaseModel):
+    id: str
+    email: str
+    displayName: str
+    firstName: str
+    lastName: str
+
+class CreateUserRequest(BaseModel):
+    user: CreateUserInput
