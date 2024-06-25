@@ -71,6 +71,14 @@ async def add_tags_to_vm_endpoint(request: AddTagsRequest):
 def create_vm_from_template(vm: LinkedClone):
     return pve.create_linked_clone(vm.name, vm.template_id)
 
+@app.post("/api/v1/pve/start-vm/{vm_name}")
+def start_vm(vm_name: str):
+    result = pve.start_vm(vm_name)
+    print(result)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
 def create_proxy(proxy_host: ProxyHost):

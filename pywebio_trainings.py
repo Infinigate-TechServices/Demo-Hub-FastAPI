@@ -44,9 +44,11 @@ def create_training_seats():
             "last_name": seat_info['last_name'],
         })
 
-    total_steps = len(seats) * 2
+    total_steps = len(seats) * 3
+    current_step = 0
     for idx, seat in enumerate(seats):
-        put_info(f"Creating VM for {seat['name']}... ({idx + 1}/{len(seats)})")
+        current_step += 1
+        put_info(f"Creating VM for {seat['name']}... ({current_step}/{total_steps})")
         with put_loading():
             response = requests.post(f"{API_BASE_URL}/v1/pve/create-linked-clone", json={
                 "name": seat['name'],
@@ -58,7 +60,8 @@ def create_training_seats():
 
         time.sleep(5)
 
-        put_info(f"Adding tags to VM {seat['name']}... ({idx + 1}/{len(seats)})")
+        current_step += 1
+        put_info(f"Adding tags to VM {seat['name']}... ({current_step}/{total_steps})")
         tags = [
             f"start-{training_dates['start_date']}",
             f"end-{training_dates['end_date']}"
@@ -70,7 +73,16 @@ def create_training_seats():
             })
         if response.status_code != 200:
             put_error(f"Failed to add tags to VM {seat['name']}. Error: {response.text}")
-
+        
         time.sleep(5)
 
-    put_success("Training seats creation process completed!")
+        current_step += 1
+        put_info(f"Starting VM {seat['name']}... ({current_step}/{total_steps})")
+        with put_loading():
+            response = requests.post(f"{API_BASE_URL}/v1/pve/start-vm/{seat['name']}")
+        if response.status_code != 200:
+            put_error(f"Failed to start VM {seat['name']}. Error: {response.text}")
+        
+        time.sleep(5)
+
+    put_success("Training seats creation and startup process completed!")

@@ -182,3 +182,18 @@ def add_tags_to_vm(request: AddTagsRequest):
     
     logger.warning(f"Failed to add tags to VM {request.vm_name} on any node")
     return False
+
+def start_vm(vm_name: str):
+    vmid = get_vm_id(vm_name)
+    if vmid is None:
+        return {"error": f"VM '{vm_name}' not found"}
+    
+    for node in proxmox_nodes:
+        try:
+            proxmox.nodes(node).qemu(vmid).status.start.post()
+            return {"message": f"VM '{vm_name}' started successfully"}
+        except Exception as e:
+            logger.error(f"Error starting VM '{vm_name}': {str(e)}")
+            return {"error": f"Exception occurred while starting VM '{vm_name}': {str(e)}"}
+
+    return {"error": f"VM '{vm_name}' could not be started on any node"}
