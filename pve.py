@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import time
 import threading
+import json
 
 load_dotenv()
 
@@ -117,4 +118,25 @@ def get_vm_id(vm: VM):
     for vm in vms:
         if vm['name'] == vm.name:
             return vm['vmid']
+    return None
+
+def find_seat_ip(vm_name: str) -> str:
+    for node in proxmox.nodes.get():
+        for vm in proxmox.nodes(node['node']).qemu.get():
+            if vm['name'] == vm_name:
+                try:
+                    command = "pct exec 100 -- bash -c \"ip -4 addr show eth0 | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}'\""
+                    result = proxmox.nodes(node['node']).qemu(vm['vmid']).agent.exec.post(command=command)
+                    
+                    pid = result['pid']
+                    
+                    for _ in range(30):  # Try for 30 seconds
+                        time.sleep(1)
+                        status = proxmox.nodes(node['node']).qemu(vm['vmid']).agent('exec-status').get(pid=pid)
+                        if status['exited']:
+                            if 'out-data' in status:
+                                return status['out-data'].strip()
+                            break
+                except Exception as e:
+                    print(f"Error processing VM {vm_name}: {str(e)}")
     return None

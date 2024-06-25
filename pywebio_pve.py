@@ -2,12 +2,13 @@ from pywebio.input import actions, input, input_group, NUMBER, checkbox
 from pywebio.output import put_text, put_table, put_error, put_buttons
 from pywebio.session import run_js
 import requests
+import time
 
 API_BASE_URL = "http://localhost:8081/api"
 
 def pve_management():
     pve_choice = actions('Choose PVE action', [
-        'List VMs', 'List Templates', 'Create VMs', 'Remove VMs', 'Return to Main Menu'
+        'List VMs', 'List Templates', 'Create VMs', 'Remove VMs', 'Find Seat IP', 'Return to Main Menu'
     ])
     if pve_choice == 'List VMs':
         response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
@@ -81,8 +82,36 @@ def pve_management():
             put_text("Selected VMs deleted successfully!")
         else:
             put_error("Failed to retrieve VMs.")
+    elif pve_choice == 'Find Seat IP':
+        find_seat_ip()
     elif pve_choice == 'Return to Main Menu':
         run_js('location.reload()')
+
+def find_seat_ip():
+    vm_name = input("Enter VM name to find seat IP", required=True)
+    put_text(f"Searching for IP of seat '{vm_name}'...")
+    
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{vm_name}", timeout=60)
+            response.raise_for_status()
+            
+            data = response.json()
+            if 'ip_address' in data:
+                put_text(f"IP address for seat '{vm_name}': {data['ip_address']}")
+                return
+            else:
+                put_text(f"Unexpected response format: {data}")
+            
+        except requests.exceptions.Timeout:
+            put_text(f"Request timed out (attempt {attempt + 1}/{max_retries}). Retrying...")
+            time.sleep(5)
+        except requests.exceptions.RequestException as e:
+            put_error(f"An error occurred: {str(e)}")
+            return
+    
+    put_error(f"Failed to retrieve IP for seat '{vm_name}' after {max_retries} attempts.")
 
 def format_memory(mem):
     # Convert memory from bytes to GB

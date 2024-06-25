@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
 from models import RecordA, TrainingSeat, ProxyHost, VM
 import cf
@@ -37,6 +37,14 @@ def remove_vm(vm: VM):
 @app.get("/api/v1/pve/list-vms")
 def list_vms():
     return pve.list_vms()
+
+@app.get("/api/v1/pve/find-seat-ip/{vm_name}")
+async def get_seat_ip(vm_name: str):
+    ip_address = pve.find_seat_ip(vm_name)
+    if ip_address:
+        return {"vm_name": vm_name, "ip_address": ip_address}
+    else:
+        raise HTTPException(status_code=404, detail="VM not found or IP not configured")
 
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
