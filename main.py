@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone
 import cf
 import pve
 import guacamole
@@ -10,7 +10,9 @@ from pywebio_app import pywebio_main
 import logging
 import traceback
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
 # Cloudflare endpoints
@@ -50,6 +52,24 @@ async def get_seat_ip(vm_name: str):
         return {"vm_name": vm_name, "ip_address": ip_address}
     else:
         raise HTTPException(status_code=404, detail="VM not found or IP not configured")
+
+@app.post("/api/v1/pve/add-tags-to-vm")
+async def add_tags_to_vm_endpoint(request: AddTagsRequest):
+    logger.debug(f"Received request to add tags: {request.dict()}")
+    try:
+        result = pve.add_tags_to_vm(request)
+        if result:
+            return {"message": f"Tags added successfully to VM {request.vm_name}"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to add tags to VM")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/pve/create-linked-clone")
+def create_vm_from_template(vm: LinkedClone):
+    return pve.create_linked_clone(vm.name, vm.template_id)
 
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")

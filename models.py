@@ -44,3 +44,11 @@ class CreateUserInput(BaseModel):
 
 class CreateUserRequest(BaseModel):
     user: CreateUserInput
+    
+class AddTagsRequest(BaseModel):
+    vm_name: str
+    tags: List[str]
+    
+class LinkedClone(BaseModel):
+    name: str
+    template_id: int

@@ -6,6 +6,7 @@ import pywebio_dns
 import pywebio_nginx
 import pywebio_guacamole
 import pywebio_lldap
+import pywebio_trainings
 
 def pywebio_main():
     while True:
@@ -15,6 +16,7 @@ def pywebio_main():
             'Nginx Proxy Management',
             'Guacamole Management',
             'LDAP Management',
+            'Create Training Seats',
             'Exit'
         ])
         
@@ -33,6 +35,9 @@ def pywebio_main():
         elif choice == 'LDAP Management':
             pywebio_lldap.lldap_management()
         
+        elif choice == 'Create Training Seats':
+            pywebio_trainings.create_training_seats()
+            
         elif choice == 'Exit':
             break  # Exit the loop and end the application
         

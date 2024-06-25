@@ -1,10 +1,14 @@
 from proxmoxer import ProxmoxAPI
-from models import TrainingSeat, VM
+from models import TrainingSeat, VM, AddTagsRequest
 import os
 from dotenv import load_dotenv
 import time
 import threading
 import json
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -93,6 +97,14 @@ def remove_training_seat(seat: TrainingSeat):
                 return proxmox.nodes(node).qemu(vmid).delete()
     return {"error": "VM not found"}
 
+def create_linked_clone(name: str, template_id: int):
+    best_node = evaluate_nodes()
+    if not best_node:
+        return {"error": "No suitable node found"}
+    
+    vmid = proxmox.cluster.nextid.get()
+    return proxmox.nodes(best_node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=0)
+
 def remove_vm(vm: VM):
     vmid = get_vm_id(vm.name)
     if vmid is not None:
@@ -113,11 +125,16 @@ def list_vms():
         vms_list.extend(vms)
     return vms_list
 
-def get_vm_id(vm: VM):
-    vms = list_vms()
-    for vm in vms:
-        if vm['name'] == vm.name:
-            return vm['vmid']
+def get_vm_id(vm_name):
+    logger.debug(f"Searching for VM with name: {vm_name}")
+    for node in proxmox.nodes.get():
+        logger.debug(f"Checking node: {node['node']}")
+        for vm in proxmox.nodes(node['node']).qemu.get():
+            logger.debug(f"Found VM: {vm['name']} (ID: {vm['vmid']})")
+            if vm['name'] == vm_name:
+                logger.info(f"VM found: {vm_name} (ID: {vm['vmid']})")
+                return vm['vmid']
+    logger.warning(f"VM not found: {vm_name}")
     return None
 
 def find_seat_ip(vm_name: str) -> str:
@@ -140,3 +157,28 @@ def find_seat_ip(vm_name: str) -> str:
                 except Exception as e:
                     print(f"Error processing VM {vm_name}: {str(e)}")
     return None
+
+def add_tags_to_vm(request: AddTagsRequest):
+    logger.info(f"Attempting to add tags to VM: {request.vm_name}")
+    logger.debug(f"Tags to add: {request.tags}")
+    
+    # Convert tags to a comma-separated string
+    tags_string = ','.join(request.tags)
+    logger.debug(f"Tags string: {tags_string}")
+    
+    vmid = get_vm_id(request.vm_name)
+    if vmid is None:
+        raise ValueError(f"VM with name {request.vm_name} not found")
+    
+    for node in proxmox.nodes.get():
+        try:
+            logger.debug(f"Updating tags for VM {request.vm_name} (ID: {vmid}) on node {node['node']}")
+            logger.debug(f"Proxmox API call: proxmox.nodes('{node['node']}').qemu({vmid}).config.put(tags='{tags_string}')")
+            proxmox.nodes(node['node']).qemu(vmid).config.put(tags=tags_string)
+            logger.info(f"Tags updated successfully for VM {request.vm_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding tags to VM {request.vm_name}: {str(e)}")
+    
+    logger.warning(f"Failed to add tags to VM {request.vm_name} on any node")
+    return False
