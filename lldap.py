@@ -89,6 +89,36 @@ class LLDAPAPI:
 
         result = self.client.execute(mutation, variable_values=variables)
         return result['deleteUser']['ok']
+    
+    def add_user_to_group(self, user_id, group_id):
+        mutation = gql("""
+        mutation AddUserToGroup($userId: String!, $groupId: Int!) {
+        addUserToGroup(userId: $userId, groupId: $groupId) {
+            ok
+        }
+        }
+        """)
+
+        variables = {
+            "userId": user_id,
+            "groupId": group_id
+        }
+
+        result = self.client.execute(mutation, variable_values=variables)
+        return result['addUserToGroup']['ok']
+    
+    def list_groups(self):
+        query = gql("""
+        query {
+        groups {
+            id
+            displayName
+        }
+        }
+        """)
+
+        result = self.client.execute(query)
+        return result['groups']
 
 # Initialize the LLDAPAPI instance
 lldap_api = LLDAPAPI()
@@ -102,3 +132,9 @@ def list_users():
 
 def remove_user(user_id):
     return lldap_api.remove_user(user_id)
+
+def add_user_to_group(user_id, group_id):
+    return lldap_api.add_user_to_group(user_id, group_id)
+
+def list_groups():
+    return lldap_api.list_groups()

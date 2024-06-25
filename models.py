@@ -40,6 +40,7 @@ class CreateUserInput(BaseModel):
     displayName: str
     firstName: str
     lastName: str
+    groupId: int
 
 class CreateUserRequest(BaseModel):
     user: CreateUserInput

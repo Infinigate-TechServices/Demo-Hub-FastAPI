@@ -103,7 +103,14 @@ async def create_lldap_user(user: CreateUserInput):
             firstName=user.firstName,
             lastName=user.lastName
         )
-        return {"message": f"User {user.id} created successfully", "user": created_user}
+        
+        # Add user to group
+        group_added = lldap.add_user_to_group(user.id, user.groupId)
+        
+        if group_added:
+            return {"message": f"User {user.id} created and added to group successfully", "user": created_user}
+        else:
+            return {"message": f"User {user.id} created but failed to add to group", "user": created_user}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -119,6 +126,14 @@ async def delete_lldap_user(user_id: str):
         return {"message": f"User {user_id} deleted successfully"}
     else:
         raise HTTPException(status_code=404, detail="User not found or failed to delete")
+    
+@app.get("/api/v1/lldap/groups")
+async def list_lldap_groups():
+    try:
+        groups = lldap.list_groups()
+        return {"groups": groups}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # Mounting PyWebIO app
 app.mount("/", asgi_app(pywebio_main), name="pywebio")

@@ -1,4 +1,4 @@
-from pywebio.input import input, actions
+from pywebio.input import input, select, actions
 from pywebio.output import put_text, put_table, put_buttons, put_error, put_success
 from pywebio.session import run_js
 import requests
@@ -25,13 +25,21 @@ def lldap_management():
 def create_lldap_user():
     first_name = input("First Name", required=True)
     last_name = input("Last Name", required=True)
+    
+    # Fetch available groups
+    groups = fetch_groups()
+    group_choices = {group['displayName']: str(group['id']) for group in groups}
+    
+    selected_group_name = select("Select a group", options=list(group_choices.keys()))
+    selected_group_id = group_choices[selected_group_name]
 
     user_data = {
         "id": f"{first_name.lower()}.{last_name.lower()}",
         "email": f"{first_name.lower()}.{last_name.lower()}@infinigate-labs.com",
         "displayName": f"{first_name} {last_name}",
         "firstName": first_name,
-        "lastName": last_name
+        "lastName": last_name,
+        "groupId": int(selected_group_id)
     }
 
     try:
@@ -41,10 +49,20 @@ def create_lldap_user():
         put_success(f"User {result['user']['displayName']} created successfully")
         put_text(f"User ID: {result['user']['id']}")
         put_text(f"Email: {result['user']['email']}")
+        put_text(f"Added to group: {selected_group_name}")
     except requests.RequestException as e:
         put_error(f"Failed to create user: {str(e)}")
         if e.response is not None:
             put_error(f"Response: {e.response.text}")
+
+def fetch_groups():
+    try:
+        response = requests.get(f"{API_BASE_URL}/v1/lldap/groups")
+        response.raise_for_status()
+        return response.json()['groups']
+    except requests.RequestException as e:
+        put_error(f"Failed to fetch groups: {str(e)}")
+        return []
 
 def list_lldap_users():
     try:
