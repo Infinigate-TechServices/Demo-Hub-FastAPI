@@ -40,7 +40,7 @@ class CreateUserInput(BaseModel):
     displayName: str
     firstName: str
     lastName: str
-    groupId: int
+    #groupId: int
 
 class CreateUserRequest(BaseModel):
     user: CreateUserInput
@@ -52,3 +52,7 @@ class AddTagsRequest(BaseModel):
 class LinkedClone(BaseModel):
     name: str
     template_id: int
+    
+class AddUserToGroupInput(BaseModel):
+    userId: str
+    groupId: int

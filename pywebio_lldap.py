@@ -8,7 +8,7 @@ API_BASE_URL = "http://localhost:8081/api"
 def lldap_management():
     while True:
         choice = actions('Choose LLDAP action', [
-            'Create User', 'List Users', 'Delete User', 'Return to Main Menu'
+            'Create User', 'List Users', 'Delete User', 'List Groups', 'Return to Main Menu'
         ])
 
         if choice == 'Create User':
@@ -17,6 +17,8 @@ def lldap_management():
             list_lldap_users()
         elif choice == 'Delete User':
             delete_lldap_user()
+        elif choice == 'List Groups':
+            list_lldap_groups()
         elif choice == 'Return to Main Menu':
             break
 
@@ -95,6 +97,25 @@ def delete_lldap_user():
         put_success(f"User {user_id} deleted successfully")
     except requests.RequestException as e:
         put_error(f"Failed to delete user: {str(e)}")
+
+def list_lldap_groups():
+    try:
+        response = requests.get(f"{API_BASE_URL}/v1/lldap/groups")
+        response.raise_for_status()
+        groups = response.json()['groups']
+
+        if not groups:
+            put_text("No groups found")
+        else:
+            table = [['Group ID', 'Group Name']]
+            for group in groups:
+                table.append([
+                    group.get('id', 'N/A'),
+                    group.get('displayName', 'N/A')
+                ])
+            put_table(table)
+    except requests.RequestException as e:
+        put_error(f"Failed to retrieve groups: {str(e)}")
 
 if __name__ == "__main__":
     lldap_management()

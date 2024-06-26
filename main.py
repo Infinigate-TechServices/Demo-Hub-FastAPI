@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput
 import cf
 import pve
 import guacamole
@@ -131,14 +131,7 @@ async def create_lldap_user(user: CreateUserInput):
             firstName=user.firstName,
             lastName=user.lastName
         )
-        
-        # Add user to group
-        group_added = lldap.add_user_to_group(user.id, user.groupId)
-        
-        if group_added:
-            return {"message": f"User {user.id} created and added to group successfully", "user": created_user}
-        else:
-            return {"message": f"User {user.id} created but failed to add to group", "user": created_user}
+        return {"message": f"User {user.id} created successfully", "user": created_user}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -160,6 +153,17 @@ async def list_lldap_groups():
     try:
         groups = lldap.list_groups()
         return {"groups": groups}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+@app.post("/api/v1/lldap/add-user-to-group")
+async def add_user_to_group(input: AddUserToGroupInput):
+    try:
+        group_added = lldap.add_user_to_group(input.userId, input.groupId)
+        if group_added:
+            return {"message": f"User {input.userId} added to group {input.groupId} successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to add user to group")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
