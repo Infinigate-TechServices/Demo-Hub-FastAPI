@@ -3,8 +3,31 @@ from pywebio.output import put_text, put_error, put_loading, put_info, put_succe
 import requests
 from datetime import datetime
 import time
+import re
+import unidecode
 
 API_BASE_URL = "http://localhost:8081/api"
+
+def sanitize_name(name):
+    # Remove leading/trailing whitespace
+    name = name.strip()
+    
+    # Replace multiple spaces with a single space
+    name = re.sub(r'\s+', ' ', name)
+    
+    # Remove any characters that aren't letters, spaces, or hyphens
+    name = re.sub(r'[^a-zA-Z\s-]', '', name)
+    
+    # Replace umlauts and other diacritical marks
+    name = unidecode.unidecode(name)
+    
+    # Replace spaces with dashes
+    name = name.replace(' ', '-')
+    
+    # Capitalize each word (now separated by dashes)
+    name = '-'.join(word.capitalize() for word in name.split('-'))
+    
+    return name
 
 def create_training_seats():
     put_info("Fetching available templates...")
@@ -31,17 +54,26 @@ def create_training_seats():
 
     seats = []
     for i in range(num_seats):
-        seat_info = input_group(f"Enter details for seat {i + 1}", [
-            input("First Name", name="first_name", required=True),
-            input("Last Name", name="last_name", required=True),
-        ])
-        
-        vm_name = f"{seat_info['first_name']}-{seat_info['last_name']}-{selected_template_name}"
+        while True:
+            seat_info = input_group(f"Enter details for seat {i + 1}", [
+                input("First Name", name="first_name", required=True),
+                input("Last Name", name="last_name", required=True),
+            ])
+            
+            first_name = sanitize_name(seat_info['first_name'])
+            last_name = sanitize_name(seat_info['last_name'])
+            
+            if first_name and last_name:  # Ensure names are not empty after sanitization
+                break
+            else:
+                put_error("Names cannot be empty. Please enter valid names.")
+
+        vm_name = f"{first_name}-{last_name}-{selected_template_name}"
         seats.append({
             "name": vm_name,
             "template_id": selected_template_id,
-            "first_name": seat_info['first_name'],
-            "last_name": seat_info['last_name'],
+            "first_name": first_name,
+            "last_name": last_name,
         })
 
     total_steps = len(seats) * 3
