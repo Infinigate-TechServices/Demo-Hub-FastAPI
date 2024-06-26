@@ -70,3 +70,7 @@ class GuacamoleConnectionRequest(BaseModel):
     server_layout: str = "de-de-qwertz"
     guacd_hostname: Optional[str] = None
     guacd_port: Optional[str] = None
+    
+class AddConnectionToUserRequest(BaseModel):
+    username: str
+    connection_id: str

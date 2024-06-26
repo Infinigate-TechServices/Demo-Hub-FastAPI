@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest
 import cf
 import pve
 import guacamole
@@ -130,24 +130,47 @@ async def list_guacamole_users():
     
 @app.post("/api/v1/guacamole/connections")
 async def create_guacamole_connection(request: GuacamoleConnectionRequest):
-    result = guacamole.create_rdp_connection(
-        connection_name=request.connection_name,
-        hostname=request.hostname,
-        port=request.port,
-        username=request.username,
-        password=request.password,
-        domain=request.domain,
-        security=request.security,
-        ignore_cert=request.ignore_cert,
-        enable_font_smoothing=request.enable_font_smoothing,
-        server_layout=request.server_layout,
-        guacd_hostname=request.guacd_hostname,
-        guacd_port=request.guacd_port
-    )
-    if result:
-        return {"message": "Connection created successfully", "connection_id": result.get("identifier")}
+    try:
+        result = guacamole.create_rdp_connection(
+            connection_name=request.connection_name,
+            hostname=request.hostname,
+            port=request.port,
+            username=request.username,
+            password=request.password,
+            domain=request.domain,
+            security=request.security,
+            ignore_cert=request.ignore_cert,
+            enable_font_smoothing=request.enable_font_smoothing,
+            server_layout=request.server_layout,
+            guacd_hostname=request.guacd_hostname,
+            guacd_port=request.guacd_port
+        )
+        if result:
+            return {"message": "Connection created successfully", "connection_id": result.get("identifier")}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create connection")
+    except Exception as e:
+        logger.error(f"Error creating connection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create connection: {str(e)}")
+    
+@app.post("/api/v1/guacamole/add-to-connection")
+async def add_connection_to_user_endpoint(request: AddConnectionToUserRequest):
+    result = guacamole.add_connection_to_user(request.username, request.connection_id)
+    if isinstance(result, tuple) and not result[0]:
+        raise HTTPException(status_code=500, detail=f"Failed to add connection to user: {result[1]}")
+    elif result:
+        return {"message": f"Connection {request.connection_id} added to user {request.username} successfully"}
     else:
-        raise HTTPException(status_code=500, detail="Failed to create connection")
+        raise HTTPException(status_code=500, detail="Failed to add connection to user")
+
+@app.get("/api/v1/guacamole/get-connection-id/{connection_name}")
+async def get_connection_id_endpoint(connection_name: str):
+    connection_name = connection_name.replace("%20", " ")
+    connection_id = guacamole.get_connection_id(connection_name)
+    if connection_id:
+        return {"connection_name": connection_name, "connection_id": connection_id}
+    else:
+        raise HTTPException(status_code=404, detail=f"No connection found with name: {connection_name}")
 
 # LLDAP endpoints
 @app.post("/api/v1/lldap/users")
