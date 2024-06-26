@@ -52,6 +52,14 @@ async def get_seat_ip(vm_name: str):
         return {"vm_name": vm_name, "ip_address": ip_address}
     else:
         raise HTTPException(status_code=404, detail="VM not found or IP not configured")
+    
+@app.get("/api/v1/pve/find-seat-ip-pve/{vm_name}")
+async def get_seat_ip_pve(vm_name: str):
+    ip_address = pve.find_seat_ip_pve(vm_name)
+    if ip_address:
+        return {"vm_name": vm_name, "ip_address": ip_address}
+    else:
+        raise HTTPException(status_code=404, detail="VM not found or IP not configured")
 
 @app.post("/api/v1/pve/add-tags-to-vm")
 async def add_tags_to_vm_endpoint(request: AddTagsRequest):

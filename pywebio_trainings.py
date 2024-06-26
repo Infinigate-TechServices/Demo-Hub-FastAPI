@@ -146,7 +146,9 @@ def create_training_seats():
         if response.status_code != 200:
             put_error(f"Failed to create LLDAP user for {seat['name']}. Error: {response.text}")
             continue
-
+        
+        time.sleep(5)
+        
         # Step 5: Add user to group in LLDAP
         current_step += 1
         put_info(f"Adding user {seat['first_name']} {seat['last_name']} to group... ({current_step}/{total_steps})")
@@ -159,6 +161,8 @@ def create_training_seats():
         if response.status_code != 200:
             put_error(f"Failed to add user {seat['name']} to group. Error: {response.text}")
 
+        time.sleep(5)
+        
         # Step 6: Create User in Guacamole
         current_step += 1
         put_info(f"Creating Guacamole user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
@@ -168,11 +172,13 @@ def create_training_seats():
         if response.status_code != 200:
             put_error(f"Failed to create Guacamole user for {seat['name']}. Error: {response.text}")
 
+        time.sleep(5)
+        
         # Step 7: Find Seat IP
         current_step += 1
-        put_info(f"Finding IP for seat {seat['name']}, but let's wait.... ({current_step}/{total_steps})")
+        put_info(f"Finding IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
         with put_loading():
-            time.sleep(30)
+            time.sleep(60)
             response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{seat['name']}")
         if response.status_code == 200:
             seat_ip = response.json().get('ip_address')

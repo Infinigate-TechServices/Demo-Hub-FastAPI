@@ -159,7 +159,7 @@ def find_seat_ip(vm_name: str) -> str:
         for vm in proxmox.nodes(node['node']).qemu.get():
             if vm['name'] == vm_name:
                 try:
-                    command = "pct exec 100 -- bash -c \"ip -4 addr show eth0 | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}'\""
+                    command = "pct exec 200 -- bash -c \"ip -4 addr show eth0 | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}'\""
                     result = proxmox.nodes(node['node']).qemu(vm['vmid']).agent.exec.post(command=command)
                     
                     pid = result['pid']
@@ -171,6 +171,21 @@ def find_seat_ip(vm_name: str) -> str:
                             if 'out-data' in status:
                                 return status['out-data'].strip()
                             break
+                except Exception as e:
+                    print(f"Error processing VM {vm_name}: {str(e)}")
+    return None
+
+def find_seat_ip_pve(vm_name: str) -> str:
+    for node in proxmox.nodes.get():
+        for vm in proxmox.nodes(node['node']).qemu.get():
+            if vm['name'] == vm_name:
+                try:
+                    interfaces_data = proxmox.nodes(node['node']).qemu(vm['vmid']).agent.get('network-get-interfaces')
+                    for interface in interfaces_data.get('result', []):
+                        if 'ip-addresses' in interface:
+                            for ip_addr in interface['ip-addresses']:
+                                if ip_addr['ip-address-type'] == 'ipv4' and ip_addr['ip-address'].startswith('100.64.'):
+                                    return ip_addr['ip-address']
                 except Exception as e:
                     print(f"Error processing VM {vm_name}: {str(e)}")
     return None
