@@ -20,3 +20,4 @@ lerna-debug.log*
 
 # Environment
 .env
+training-guac-connections.py
