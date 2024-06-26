@@ -86,7 +86,7 @@ def create_training_seats():
     selected_group = select("Select the group for the students", options=[g[0] for g in group_options])
     selected_group_id = next(g[1] for g in group_options if g[0] == selected_group)
 
-    total_steps = len(seats) * 7  # Adjust the number of steps if needed
+    total_steps = len(seats) * 8  # Adjust the number of steps if needed
     current_step = 0
 
     for idx, seat in enumerate(seats):
@@ -174,11 +174,27 @@ def create_training_seats():
 
         time.sleep(5)
         
-        # Step 7: Find Seat IP
-        current_step += 1
-        put_info(f"Finding IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
+        # Step 8: Find Proxmox Seat IP
+        current_step +=1
+        put_info(f"Finding Proxmox IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
         with put_loading():
-            time.sleep(60)
+            time.sleep(15)
+            response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip-pve/{seat['name']}")
+        if response.status_code == 200:
+            seat_ip_proxmox = response.json().get('ip_address')
+            if seat_ip_proxmox:
+                put_success(f"IP address for seat {seat['name']}: {seat_ip_proxmox}")
+            else:
+                put_error(f"Failed to find IP for seat {seat['name']}.")
+        else:
+            put_error(f"Failed to find IP for seat {seat['name']}. Error: {response.text}")
+            
+        time.sleep(5)
+        # Step 8: Find Guacamole Seat IP
+        current_step += 1
+        put_info(f"Finding Guacamole IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
+        with put_loading():
+            time.sleep(15)
             response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{seat['name']}")
         if response.status_code == 200:
             seat_ip = response.json().get('ip_address')
