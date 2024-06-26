@@ -16,6 +16,5 @@ TEMPLATE_CONNECTIONS = {
     "NSE4": [
         {"name": "HTTPS", "protocol": "rdp", "port": 443},
         {"name": "SSH", "protocol": "ssh", "port": 22}
-    ],
-    # Add more template patterns and their required connections here
+    ]
 }

@@ -56,3 +56,17 @@ class LinkedClone(BaseModel):
 class AddUserToGroupInput(BaseModel):
     userId: str
     groupId: int
+    
+class GuacamoleConnectionRequest(BaseModel):
+    connection_name: str
+    hostname: str
+    port: int = 3389
+    username: Optional[str] = ""
+    password: Optional[str] = ""
+    domain: Optional[str] = "STUDENT"
+    security: str = "NLA"
+    ignore_cert: bool = True
+    enable_font_smoothing: bool = True
+    server_layout: str = "de-de-qwertz"
+    guacd_hostname: Optional[str] = None
+    guacd_port: Optional[str] = None

@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest
 import cf
 import pve
 import guacamole
@@ -127,6 +127,27 @@ async def list_guacamole_users():
         return users
     else:
         raise HTTPException(status_code=500, detail="Failed to retrieve users")
+    
+@app.post("/api/v1/guacamole/connections")
+async def create_guacamole_connection(request: GuacamoleConnectionRequest):
+    result = guacamole.create_rdp_connection(
+        connection_name=request.connection_name,
+        hostname=request.hostname,
+        port=request.port,
+        username=request.username,
+        password=request.password,
+        domain=request.domain,
+        security=request.security,
+        ignore_cert=request.ignore_cert,
+        enable_font_smoothing=request.enable_font_smoothing,
+        server_layout=request.server_layout,
+        guacd_hostname=request.guacd_hostname,
+        guacd_port=request.guacd_port
+    )
+    if result:
+        return {"message": "Connection created successfully", "connection_id": result.get("identifier")}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create connection")
 
 # LLDAP endpoints
 @app.post("/api/v1/lldap/users")
