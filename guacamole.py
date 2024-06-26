@@ -3,7 +3,6 @@ import urllib.parse
 import requests
 from dotenv import load_dotenv
 import os
-from guacamole_connection_templates import RDP_CONNECTION
 
 load_dotenv()
 
@@ -115,6 +114,48 @@ class GuacamoleAPI:
             log.error(f"Failed to create RDP connection '{connection_name}': {r.text}")
             return None
         
+    def create_connection(self, connection_data):
+        connection = {
+            "name": connection_data.get("connection_name"),
+            "parent_id": connection_data.get("parent_id"),
+            "protocol": connection_data.get("protocol"),
+            "parameters": {},
+            "attributes": {
+                "guacd-hostname": connection_data.get("proxy_hostname"),
+                "guacd-port": str(connection_data.get("proxy_port"))
+            }
+        }
+
+        # Add common parameters
+        common_params = ["hostname", "port", "username", "password"]
+        for param in common_params:
+            if param in connection_data:
+                connection["parameters"][param] = str(connection_data[param])
+
+        # Add protocol-specific parameters
+        if connection_data["protocol"] == "rdp":
+            rdp_params = ["domain", "ignore-cert", "security", "server-layout", "enable-font-smoothing"]
+            for param in rdp_params:
+                if param in connection_data:
+                    connection["parameters"][param] = str(connection_data[param]).lower()
+
+        elif connection_data["protocol"] == "ssh":
+            ssh_params = ["color-scheme", "font-name", "font-size"]
+            for param in ssh_params:
+                if param in connection_data:
+                    connection["parameters"][param] = str(connection_data[param])
+
+        # You can add more protocol-specific parameters here for other protocols
+
+        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/connections')
+        r = requests.post(url, headers=self.headers, params={'token': self.token}, json=connection)
+        
+        if r.status_code == 200:
+            log.info(f"Connection '{connection['name']}' created successfully")
+            return r.json()
+        else:
+            log.error(f"Failed to create connection '{connection['name']}': {r.text}")
+            return None
     def add_connection_to_user(self, username, connection_id):
         url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}/permissions')
         
@@ -183,3 +224,6 @@ def add_connection_to_user(username, connection_id):
 
 def get_connection_id(connection_name):
     return guacamole_api.get_connection_id(connection_name)
+
+def create_connection(connection_data):
+    return guacamole_api.create_connection(connection_data)

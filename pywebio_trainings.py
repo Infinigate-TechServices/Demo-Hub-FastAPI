@@ -237,6 +237,7 @@ def create_training_seats():
                 connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
                 connection_data = {
                     "connection_name": connection_name,
+                    "parent_id": connection["parent_id"],
                     "protocol": connection["protocol"],
                     "hostname": connection.get("hostname", "").replace("{{seat_ip}}", seat_ip),
                     "port": connection.get("port", 0),

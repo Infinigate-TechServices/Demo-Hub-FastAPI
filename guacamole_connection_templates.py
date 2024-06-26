@@ -18,8 +18,9 @@ RDP_CONNECTION = {
         "server-layout": "",
         "domain": "",
         "hostname": "",
+        "password": "",
         "enable-font-smoothing": "",
-        "security": "rdp",
+        "security": "nla",
         "port": "3389",
         "disable-auth": "",
         "ignore-cert": "",
@@ -41,4 +42,19 @@ RDP_CONNECTION = {
         "enable-sftp": "",
         "sftp-port": "",
     },
+}
+
+SSH_CONNECTION = {
+    "activeConnections": 0,
+    "attributes": {"max-connections": "", "max-connections-per-user": ""},
+    "identifier": "",
+    "name": "",
+    "parameters": {
+        "hostname": "",
+        "password": "",
+        "port": "22",
+        "username": "",
+    },
+    "parentIdentifier": "ROOT",
+    "protocol": "ssh",
 }
