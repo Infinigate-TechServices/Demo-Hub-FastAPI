@@ -1,5 +1,5 @@
 from pywebio.input import actions, input, input_group, NUMBER, checkbox
-from pywebio.output import put_text, put_table, put_error, put_buttons
+from pywebio.output import put_text, put_table, put_error, put_buttons, put_success, put_info, clear, put_loading
 from pywebio.session import run_js
 import requests
 import time
@@ -67,21 +67,40 @@ def pve_management():
         else:
             put_error("Failed to retrieve templates.")
     elif pve_choice == 'Remove VMs':
+        put_info("Fetching list of VMs...")
         response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
-        if response.status_code == 200:
-            vms = response.json()
-            # Filter out templates
-            vms = [vm for vm in vms if '-Template' not in vm.get('name', '')]
-            vm_names = [vm.get('name') for vm in vms]
-            selected_vms = checkbox("Select VMs to delete", options=vm_names)
-            for vm_name in selected_vms:
-                #response = requests.post(f"{API_BASE_URL}/v1/pve/remove-training-seat", json={"name": vm_name})
-                response = requests.post(f"{API_BASE_URL}/v1/pve/remove-vm", json={"name": vm_name})
-                if response.status_code != 200:
-                    put_error(f"Failed to remove VM {vm_name}.")
-            put_text("Selected VMs deleted successfully!")
-        else:
+        if response.status_code != 200:
+            clear()
             put_error("Failed to retrieve VMs.")
+            return
+        
+        clear()
+        vms = response.json()
+        # Filter out templates and sort by name
+        vms = sorted([vm for vm in vms if '-Template' not in vm.get('name', '')], key=lambda x: x.get('name', ''))
+        vm_options = [f"{vm.get('name')} (ID: {vm.get('vmid')})" for vm in vms]
+        
+        selected_vms = checkbox("Select VMs to delete", options=vm_options)
+        if not selected_vms:
+            put_warning("No VMs selected for deletion.")
+            return
+        
+        total_steps = len(selected_vms)
+        for current_step, selected_vm in enumerate(selected_vms, 1):
+            vm_name = selected_vm.split(" (ID:")[0]
+            put_info(f"Removing VM {vm_name}... ({current_step}/{total_steps})")
+            
+            with put_loading():
+                response = requests.post(f"{API_BASE_URL}/v1/pve/remove-vm", json={"name": vm_name, "template_id": None})
+            
+            if response.status_code == 200:
+                put_success(f"VM {vm_name} removed successfully.")
+            else:
+                put_error(f"Failed to remove VM {vm_name}. Error: {response.text}")
+            
+            time.sleep(2)  # Short delay between operations
+        
+        put_success("VM removal process completed!")
     elif pve_choice == 'Find Seat IP':
         find_seat_ip()
     elif pve_choice == 'Return to Main Menu':

@@ -11,7 +11,7 @@ class TrainingSeat(BaseModel):
 
 class VM(BaseModel):
     name: str
-    template_id: Optional[int]
+    template_id: Optional[int] = None
 
 class ProxyHost(BaseModel):
     domain_names: List[str]

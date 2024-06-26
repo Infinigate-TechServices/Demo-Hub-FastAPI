@@ -107,23 +107,40 @@ def create_linked_clone(name: str, template_id: int):
 
 def remove_vm(vm: VM):
     vmid = get_vm_id(vm.name)
-    if vmid is not None:
-        for node in proxmox_nodes:
-            try:
-                proxmox.nodes(node).qemu(vmid).delete()
-                return f"VM '{vm.name}' with ID {vm.id} has been removed."
-            except Exception as e:
-                continue
-        return f"Failed to remove VM '{vm.name}'."
-    else:
+    if vmid is None:
         return f"VM '{vm.name}' not found."
+
+    # First, try to stop the VM
+    if stop_vm(vm.name):
+        # Wait for the VM to stop (with a timeout)
+        timeout = 60  # 60 seconds timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            for node in proxmox_nodes:
+                try:
+                    status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
+                    if status == 'stopped':
+                        # Now try to remove the VM
+                        proxmox.nodes(node).qemu(vmid).delete()
+                        logger.info(f"VM '{vm.name}' (ID: {vmid}) has been stopped and removed.")
+                        return f"VM '{vm.name}' with ID {vmid} has been stopped and removed."
+                except Exception as e:
+                    logger.error(f"Error checking/removing VM '{vm.name}' (ID: {vmid}) on node {node}: {str(e)}")
+            time.sleep(1)
+        
+        logger.error(f"Timeout waiting for VM '{vm.name}' (ID: {vmid}) to stop")
+        return f"Timeout waiting for VM '{vm.name}' to stop. Please check its status manually."
+    else:
+        logger.error(f"Failed to stop VM '{vm.name}' (ID: {vmid})")
+        return f"Failed to stop VM '{vm.name}'. Cannot proceed with removal."
  
 def list_vms():
     vms_list = []
     for node in proxmox_nodes:
         vms = proxmox.nodes(node).qemu().get()
         vms_list.extend(vms)
-    return vms_list
+    # Sort the VMs by name
+    return sorted(vms_list, key=lambda x: x.get('name', ''))
 
 def get_vm_id(vm_name):
     logger.debug(f"Searching for VM with name: {vm_name}")
@@ -197,3 +214,20 @@ def start_vm(vm_name: str):
             return {"error": f"Exception occurred while starting VM '{vm_name}': {str(e)}"}
 
     return {"error": f"VM '{vm_name}' could not be started on any node"}
+
+def stop_vm(vm_name: str) -> bool:
+    vmid = get_vm_id(vm_name)
+    if vmid is None:
+        logger.warning(f"Cannot stop VM '{vm_name}': VM not found")
+        return False
+    
+    for node in proxmox_nodes:
+        try:
+            proxmox.nodes(node).qemu(vmid).status.stop.post()
+            logger.info(f"VM '{vm_name}' (ID: {vmid}) stop command sent on node {node}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to stop VM '{vm_name}' (ID: {vmid}) on node {node}: {str(e)}")
+    
+    logger.error(f"Failed to stop VM '{vm_name}' (ID: {vmid}) on any node")
+    return False
