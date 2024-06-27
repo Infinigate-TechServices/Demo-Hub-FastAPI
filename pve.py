@@ -6,8 +6,11 @@ import time
 import threading
 import json
 import logging
+import schedule
+from datetime import datetime
 
-logging.basicConfig(level=logging.DEBUG)
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -61,6 +64,52 @@ while True:
     else:
         break
     index += 1
+
+def check_and_manage_vms():
+    logger.info("Starting daily VM check and management process")
+    today = datetime.now().strftime('%d-%m-%Y')
+    logger.info(f"Checking VMs for date: {today}")
+    
+    for node in proxmox.nodes.get():
+        logger.info(f"Checking node: {node['node']}")
+        for vm in proxmox.nodes(node['node']).qemu.get():
+            logger.info(f"Checking VM: {vm['name']} (ID: {vm['vmid']})")
+            if 'tags' in vm and vm['tags']:
+                tags = vm['tags'].split(';')  # Split by semicolon instead of comma
+                logger.info(f"VM {vm['name']} has tags: {tags}")
+                for tag in tags:
+                    tag = tag.strip()  # Remove any leading/trailing whitespace
+                    if tag.startswith('start-') and tag[6:] == today:
+                        logger.info(f"Starting VM {vm['name']} (ID: {vm['vmid']}) due to start tag")
+                        start_vm(vm['name'])
+                    elif tag.startswith('end-') and tag[4:] == today:
+                        logger.info(f"Removing VM {vm['name']} (ID: {vm['vmid']}) due to end tag")
+                        remove_vm(VM(name=vm['name'], template_id=None))
+            else:
+                logger.info(f"VM {vm['name']} has no tags")
+    
+    logger.info("Completed daily VM check and management process")
+
+def run_check_now():
+    logger.info("Running VM check and management process immediately")
+    check_and_manage_vms()
+
+def run_daily_check():
+    logger.info("Entering run_daily_check function")
+    schedule.every().day.at("02:00").do(check_and_manage_vms)
+    logger.info("Scheduled daily check for 02:00")
+    
+    while True:
+        logger.debug("Checking for pending scheduled tasks")
+        schedule.run_pending()
+        time.sleep(60)  # Sleep for 60 seconds before checking again
+
+def start_background_check():
+    logger.info("Starting background check thread")
+    thread = threading.Thread(target=run_daily_check)
+    thread.daemon = True
+    thread.start()
+    logger.info("Background VM check thread started")
 
 def evaluate_nodes():
     best_node = None
@@ -216,18 +265,22 @@ def add_tags_to_vm(request: AddTagsRequest):
     return False
 
 def start_vm(vm_name: str):
+    logger.info(f"Attempting to start VM: {vm_name}")
     vmid = get_vm_id(vm_name)
     if vmid is None:
+        logger.error(f"VM '{vm_name}' not found")
         return {"error": f"VM '{vm_name}' not found"}
     
     for node in proxmox_nodes:
         try:
-            proxmox.nodes(node).qemu(vmid).status.start.post()
-            return {"message": f"VM '{vm_name}' started successfully"}
+            logger.info(f"Attempting to start VM '{vm_name}' on node {node}")
+            result = proxmox.nodes(node).qemu(vmid).status.start.post()
+            logger.info(f"Start command sent for VM '{vm_name}'. Result: {result}")
+            return {"message": f"VM '{vm_name}' start command sent successfully"}
         except Exception as e:
-            logger.error(f"Error starting VM '{vm_name}': {str(e)}")
-            return {"error": f"Exception occurred while starting VM '{vm_name}': {str(e)}"}
-
+            logger.error(f"Error starting VM '{vm_name}' on node {node}: {str(e)}")
+    
+    logger.error(f"VM '{vm_name}' could not be started on any node")
     return {"error": f"VM '{vm_name}' could not be started on any node"}
 
 def stop_vm(vm_name: str) -> bool:
@@ -246,3 +299,7 @@ def stop_vm(vm_name: str) -> bool:
     
     logger.error(f"Failed to stop VM '{vm_name}' (ID: {vmid}) on any node")
     return False
+
+logger.info("Initializing PVE module")
+start_background_check()
+logger.info("PVE module initialization complete")

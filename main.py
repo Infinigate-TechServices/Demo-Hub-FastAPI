@@ -87,6 +87,11 @@ def start_vm(vm_name: str):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
 
+@app.post("/api/v1/pve/run-check-now")
+async def run_pve_check_now():
+    pve.run_check_now()
+    return {"message": "PVE check initiated"}
+
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
 def create_proxy(proxy_host: ProxyHost):

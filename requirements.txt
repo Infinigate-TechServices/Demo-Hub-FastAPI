@@ -9,3 +9,4 @@ requests
 requests.toolbelt
 gql
 unidecode
+schedule
