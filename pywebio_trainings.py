@@ -20,10 +20,23 @@ def sanitize_name(name):
     # Replace multiple spaces with a single space
     name = re.sub(r'\s+', ' ', name)
     
+    # Replace umlauts with their two-letter equivalents
+    umlaut_map = {
+        'ä': 'ae',
+        'ö': 'oe',
+        'ü': 'ue',
+        'Ä': 'Ae',
+        'Ö': 'Oe',
+        'Ü': 'Ue',
+        'ß': 'ss'
+    }
+    for umlaut, replacement in umlaut_map.items():
+        name = name.replace(umlaut, replacement)
+    
     # Remove any characters that aren't letters, spaces, or hyphens
     name = re.sub(r'[^a-zA-Z\s-]', '', name)
     
-    # Replace umlauts and other diacritical marks
+    # Replace any remaining diacritical marks
     name = unidecode.unidecode(name)
     
     # Replace spaces with dashes
@@ -106,7 +119,7 @@ def create_training_seats():
     selected_group = select("Select the group for the students", options=[g[0] for g in group_options])
     selected_group_id = next(g[1] for g in group_options if g[0] == selected_group)
 
-    total_steps = len(seats) * 9  # Adjust the number of steps if needed
+    total_steps = len(seats) * 10  # Adjust the number of steps if needed
     current_step = 0
 
     for idx, seat in enumerate(seats):
@@ -282,5 +295,25 @@ def create_training_seats():
 
         else:
             put_error(f"No template found for training: {selected_training}")
+
+        time.sleep(2)
+        
+        # Step 10: Check if VM needs to be shut down
+        current_step += 1
+        put_info(f"Checking if VM needs to be shut down... ({current_step}/{total_steps})")
+
+        start_date = datetime.strptime(training_dates['start_date'], '%d-%m-%Y').date()
+        today = datetime.now().date()
+
+        if start_date > today:
+            put_info(f"Start date {start_date} is in the future. Attempting to shut down VM {seat['name']}...")
+            try:
+                response = requests.post(f"{API_BASE_URL}/v1/pve/shutdown-vm/{seat['name']}")
+                response.raise_for_status()
+                put_success(f"Shutdown command sent for VM {seat['name']}.")
+            except requests.RequestException as e:
+                put_error(f"Failed to send shutdown command for VM {seat['name']}. Error: {str(e)}")
+        else:
+            put_info(f"Start date {start_date} is today or in the past. Keeping VM {seat['name']} running.")
 
     put_success("Training seats creation process completed!")

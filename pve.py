@@ -356,6 +356,25 @@ def stop_vm(vm_name: str) -> bool:
     logger.error(f"Failed to stop VM '{vm_name}' (ID: {vmid}) on any node")
     return False
 
+def shutdown_vm(vm_name: str):
+    vmid = get_vm_id(vm_name)
+    if vmid is None:
+        logger.warning(f"VM '{vm_name}' not found for shutdown.")
+        return {"error": f"VM '{vm_name}' not found."}
+
+    logger.info(f"Attempting to shut down VM '{vm_name}' (ID: {vmid})")
+    
+    for node in proxmox_nodes:
+        try:
+            proxmox.nodes(node).qemu(vmid).status.shutdown.post()
+            logger.info(f"Shutdown command sent for VM '{vm_name}' (ID: {vmid})")
+            return {"message": f"Shutdown command sent for VM '{vm_name}' with ID {vmid}."}
+        except Exception as e:
+            logger.error(f"Error shutting down VM '{vm_name}' (ID: {vmid}) on node {node}: {str(e)}")
+    
+    logger.error(f"Failed to shut down VM '{vm_name}' (ID: {vmid}) on any node")
+    return {"error": f"Failed to shut down VM '{vm_name}'. Check logs for details."}
+
 
 start_background_check()
 vms_scheduled_for_deletion = {}
