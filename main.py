@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest
 import cf
 import pve
 import guacamole
@@ -208,6 +208,14 @@ async def add_connection_to_user_v2(request: AddConnectionToUserRequest):
         return {"message": f"Connection {request.connection_id} added to user {request.username} successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to add connection to user")
+
+@app.post("/api/v2/guacamole/add-to-connection-group")
+async def add_user_to_connection_group_v2(request: AddUserToConnectionGroupRequest):
+    result = guacamole.add_user_to_connection_group(request.username, request.connection_group_id)
+    if result:
+        return {"message": f"User {request.username} added to connection group {request.connection_group_id} successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add user to connection group")
 
 # LLDAP endpoints
 @app.post("/api/v1/lldap/users")

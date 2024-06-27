@@ -67,3 +67,7 @@ class GuacamoleConnectionRequest(BaseModel):
 class AddConnectionToUserRequest(BaseModel):
     username: str
     connection_id: str
+    
+class AddUserToConnectionGroupRequest(BaseModel):
+    username: str
+    connection_group_id: str

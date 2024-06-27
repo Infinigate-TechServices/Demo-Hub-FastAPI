@@ -297,6 +297,17 @@ def create_training_seats():
                             put_error(f"Failed to create connection {connection_name}. Connection ID not received.")
                     except requests.RequestException as e:
                         put_error(f"Failed to create or assign connection {connection_name}. Error: {str(e)}")
+                        
+                    put_info(f"Adding user {guacamole_username} to connection group...")
+                    try:
+                        response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection-group", json={
+                            "username": guacamole_username,
+                            "connection_group_id": template["connection_group_id"]
+                        })
+                        response.raise_for_status()
+                        put_success(f"User {guacamole_username} added to connection group successfully.")
+                    except requests.RequestException as e:
+                        put_error(f"Failed to add user {guacamole_username} to connection group. Error: {str(e)}")
 
         else:
             put_error(f"No template found for training: {selected_training}")

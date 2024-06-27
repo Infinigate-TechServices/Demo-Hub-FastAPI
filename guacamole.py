@@ -102,6 +102,18 @@ class Guac:
         if r.status_code == 204:
             return True
         return False
+    
+    def add_user_to_connection_group(self, username, connection_group_id):
+        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}/permissions')
+        data = [{
+            "op": "add",
+            "path": f"/connectionGroupPermissions/{connection_group_id}",
+            "value": "READ"
+        }]
+        r = requests.patch(url, headers=self.headers, params={'token': self.token}, json=data)
+        if r.status_code == 204:
+            return True
+        return False
 
 # Initialize the Guac instance
 guac = Guac()
@@ -121,3 +133,6 @@ def create_connection(connection_data):
 
 def add_connection_to_user(username, connection_id):
     return guac.givePermissionToConnection(username, connection_id)
+
+def add_user_to_connection_group(username, connection_group_id):
+    return guac.add_user_to_connection_group(username, connection_group_id)
