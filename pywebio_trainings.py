@@ -264,10 +264,15 @@ def create_training_seats():
                         "guacd-port": str(connection["proxy_port"])
                     }
                 }
-                
+
+                # Add all parameters from the connection, excluding specific keys
+                excluded_keys = ["connection_name", "parent_id", "protocol", "proxy_hostname", "proxy_port"]
                 for key, value in connection.items():
-                    if key in ["hostname", "port", "username", "password", "ignore-cert", "security", "server-layout", "enable-font-smoothing"]:
+                    if key not in excluded_keys:
                         connection_data["parameters"][key] = str(value) if isinstance(value, bool) else value
+
+                # Remove any parameters with empty values
+                connection_data["parameters"] = {k: v for k, v in connection_data["parameters"].items() if v != ""}
 
                 with put_loading():
                     try:
