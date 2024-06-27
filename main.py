@@ -92,6 +92,13 @@ async def run_pve_check_now():
     pve.run_check_now()
     return {"message": "PVE check initiated"}
 
+@app.get("/api/v1/pve/scheduled-deletions")
+async def get_scheduled_deletions():
+    with pve.deletion_lock:
+        scheduled = {vm_name: {'id': info['id'], 'deletion_time': info['deletion_time'].isoformat()} 
+                     for vm_name, info in pve.vms_scheduled_for_deletion.items()}
+    return {"scheduled_deletions": scheduled}
+
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
 def create_proxy(proxy_host: ProxyHost):

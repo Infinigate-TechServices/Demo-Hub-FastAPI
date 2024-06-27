@@ -7,7 +7,7 @@ import threading
 import json
 import logging
 import schedule
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -75,20 +75,45 @@ def check_and_manage_vms():
         for vm in proxmox.nodes(node['node']).qemu.get():
             logger.info(f"Checking VM: {vm['name']} (ID: {vm['vmid']})")
             if 'tags' in vm and vm['tags']:
-                tags = vm['tags'].split(';')  # Split by semicolon instead of comma
+                tags = vm['tags'].split(';')
                 logger.info(f"VM {vm['name']} has tags: {tags}")
                 for tag in tags:
-                    tag = tag.strip()  # Remove any leading/trailing whitespace
+                    tag = tag.strip()
                     if tag.startswith('start-') and tag[6:] == today:
                         logger.info(f"Starting VM {vm['name']} (ID: {vm['vmid']}) due to start tag")
                         start_vm(vm['name'])
                     elif tag.startswith('end-') and tag[4:] == today:
-                        logger.info(f"Removing VM {vm['name']} (ID: {vm['vmid']}) due to end tag")
-                        remove_vm(VM(name=vm['name'], template_id=None))
+                        logger.info(f"Scheduling VM {vm['name']} (ID: {vm['vmid']}) for removal in 72 hours due to end tag")
+                        schedule_vm_for_deletion(vm['name'], vm['vmid'])
             else:
                 logger.info(f"VM {vm['name']} has no tags")
     
+    check_scheduled_deletions()
     logger.info("Completed daily VM check and management process")
+
+def schedule_vm_for_deletion(vm_name, vm_id):
+    deletion_time = datetime.now() + timedelta(hours=72)
+    with deletion_lock:
+        vms_scheduled_for_deletion[vm_name] = {
+            'id': vm_id,
+            'deletion_time': deletion_time
+        }
+    logger.info(f"VM {vm_name} (ID: {vm_id}) scheduled for deletion at {deletion_time}")
+
+def check_scheduled_deletions():
+    logger.info("Checking scheduled deletions")
+    current_time = datetime.now()
+    to_delete = []
+    with deletion_lock:
+        for vm_name, info in vms_scheduled_for_deletion.items():
+            if current_time >= info['deletion_time']:
+                to_delete.append((vm_name, info['id']))
+    
+    for vm_name, vm_id in to_delete:
+        logger.info(f"Removing VM {vm_name} (ID: {vm_id}) after 72-hour delay")
+        remove_vm(VM(name=vm_name, template_id=None))
+        with deletion_lock:
+            del vms_scheduled_for_deletion[vm_name]
 
 def run_check_now():
     logger.info("Running VM check and management process immediately")
@@ -98,6 +123,10 @@ def run_daily_check():
     logger.info("Entering run_daily_check function")
     schedule.every().day.at("02:00").do(check_and_manage_vms)
     logger.info("Scheduled daily check for 02:00")
+    
+    # Add hourly check for scheduled deletions
+    schedule.every().hour.do(check_scheduled_deletions)
+    logger.info("Scheduled hourly check for deletions")
     
     while True:
         logger.debug("Checking for pending scheduled tasks")
@@ -157,7 +186,34 @@ def create_linked_clone(name: str, template_id: int):
 def remove_vm(vm: VM):
     vmid = get_vm_id(vm.name)
     if vmid is None:
+        logger.warning(f"VM '{vm.name}' not found for removal.")
         return f"VM '{vm.name}' not found."
+
+    logger.info(f"Attempting to remove VM '{vm.name}' (ID: {vmid})")
+    
+    # First, try to stop the VM
+    if stop_vm(vm.name):
+        # Wait for the VM to stop (with a timeout)
+        timeout = 60  # 60 seconds timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            for node in proxmox_nodes:
+                try:
+                    status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
+                    if status == 'stopped':
+                        # Now try to remove the VM
+                        proxmox.nodes(node).qemu(vmid).delete()
+                        logger.info(f"VM '{vm.name}' (ID: {vmid}) has been stopped and removed.")
+                        return f"VM '{vm.name}' with ID {vmid} has been stopped and removed."
+                except Exception as e:
+                    logger.error(f"Error checking/removing VM '{vm.name}' (ID: {vmid}) on node {node}: {str(e)}")
+            time.sleep(1)
+        
+        logger.error(f"Timeout waiting for VM '{vm.name}' (ID: {vmid}) to stop")
+        return f"Timeout waiting for VM '{vm.name}' to stop. Please check its status manually."
+    else:
+        logger.error(f"Failed to stop VM '{vm.name}' (ID: {vmid})")
+        return f"Failed to stop VM '{vm.name}'. Cannot proceed with removal."
 
     # First, try to stop the VM
     if stop_vm(vm.name):
@@ -300,6 +356,7 @@ def stop_vm(vm_name: str) -> bool:
     logger.error(f"Failed to stop VM '{vm_name}' (ID: {vmid}) on any node")
     return False
 
-logger.info("Initializing PVE module")
+
 start_background_check()
-logger.info("PVE module initialization complete")
+vms_scheduled_for_deletion = {}
+deletion_lock = threading.Lock()
