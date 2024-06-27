@@ -35,6 +35,10 @@ def sanitize_name(name):
     return name
 
 def create_training_seats():
+    # Load training templates from JSON
+    with open("training_templates.json") as file:
+        training_templates = json.load(file)
+            
     put_info("Fetching available templates...")
     response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
     if response.status_code != 200:
@@ -50,10 +54,10 @@ def create_training_seats():
     # Get available training options from training_templates.json
     training_options = [template["name"] for template in training_templates]
 
-    # Ask the user to select the desired training and Proxmox template
-    selections = input_group("Select the training and Proxmox template", [
+    # Ask the user to select the desired training and VM template
+    selections = input_group("Select the training and VM template", [
         select("Training", name="selected_training", options=training_options, required=True),
-        checkbox("Proxmox Template", name="selected_template", options=template_options, required=True)
+        checkbox("VM Template", name="selected_template", options=template_options, required=True)
     ])
 
     selected_training = selections["selected_training"]
@@ -147,9 +151,9 @@ def create_training_seats():
 
         time.sleep(5)
 
-        # Step 4: Create User in LLDAP
+        # Step 4: Create User in LDAP
         current_step += 1
-        put_info(f"Creating LLDAP user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+        put_info(f"Creating LDAP user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
         lldap_user_data = {
             "id": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}",
             "email": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}@infinigate-labs.com",
@@ -165,7 +169,7 @@ def create_training_seats():
 
         time.sleep(5)
 
-        # Step 5: Add user to group in LLDAP
+        # Step 5: Add user to group in LDAP
         current_step += 1
         put_info(f"Adding user {seat['first_name']} {seat['last_name']} to group... ({current_step}/{total_steps})")
         add_to_group_data = {
@@ -227,7 +231,7 @@ def create_training_seats():
         # Step 9: Create connections for Guacamole User
         current_step += 1
         put_info(f"Creating connections in Guacamole and adding them to {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
-
+    
         # Find the matching template in the training templates
         template = next((t for t in training_templates if t["name"] == selected_training), None)
 
@@ -235,28 +239,15 @@ def create_training_seats():
             connections = template["connections"]
             for connection in connections:
                 connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
-                connection_data = {
-                    "connection_name": connection_name,
-                    "parent_id": connection["parent_id"],
-                    "protocol": connection["protocol"],
-                    "hostname": connection.get("hostname", "").replace("{{seat_ip}}", seat_ip),
-                    "port": connection.get("port", 0),
-                    "username": connection.get("username", ""),
-                    "password": connection.get("password", ""),
-                    "domain": connection.get("domain", ""),
-                    "security": connection.get("security", ""),
-                    "ignore_cert": connection.get("ignore-cert", False),
-                    "enable_font_smoothing": connection.get("enable-font-smoothing", False),
-                    "server_layout": connection.get("server-layout", ""),
-                    "guacd_hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip),
-                    "guacd_port": str(connection["proxy_port"])  # Ensure this value is a string
-                }
+                connection_data = connection.copy()
+                connection_data["connection_name"] = connection_name
+                connection_data["proxy_hostname"] = connection_data["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip)
 
                 with put_loading():
                     response = requests.post(f"{API_BASE_URL}/v1/guacamole/connections", json=connection_data)
 
                 if response.status_code == 200:
-                    connection_id = response.json().get("connection_id")
+                    connection_id = response.json().get("identifier")
                     if connection_id:
                         # Add the connection to the user
                         add_connection_data = {
@@ -272,7 +263,5 @@ def create_training_seats():
                         put_error(f"Failed to create connection {connection_name}. Connection ID not received.")
                 else:
                     put_error(f"Failed to create connection {connection_name}. Error: {response.text}")
-        else:
-            put_warning(f"No matching template found for {selected_training}. Skipping connection creation.")
 
     put_success("Training seats creation process completed!")
