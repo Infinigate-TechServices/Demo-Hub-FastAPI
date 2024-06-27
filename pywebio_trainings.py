@@ -231,7 +231,7 @@ def create_training_seats():
         # Step 9: Create connections for Guacamole User
         current_step += 1
         put_info(f"Creating connections in Guacamole and adding them to {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
-    
+
         # Find the matching template in the training templates
         template = next((t for t in training_templates if t["name"] == selected_training), None)
 
@@ -239,29 +239,48 @@ def create_training_seats():
             connections = template["connections"]
             for connection in connections:
                 connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
-                connection_data = connection.copy()
-                connection_data["connection_name"] = connection_name
-                connection_data["proxy_hostname"] = connection_data["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip)
+                
+                # Prepare connection data
+                connection_data = {
+                    "parentIdentifier": connection.get("parent_id", "ROOT"),
+                    "name": connection_name,
+                    "protocol": connection["protocol"],
+                    "parameters": {},
+                    "attributes": {
+                        "guacd-hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip),
+                        "guacd-port": str(connection["proxy_port"])
+                    }
+                }
+                
+                for key, value in connection.items():
+                    if key in ["hostname", "port", "username", "password", "ignore-cert", "security", "server-layout", "enable-font-smoothing"]:
+                        connection_data["parameters"][key] = str(value) if isinstance(value, bool) else value
 
                 with put_loading():
-                    response = requests.post(f"{API_BASE_URL}/v1/guacamole/connections", json=connection_data)
-
-                if response.status_code == 200:
-                    connection_id = response.json().get("identifier")
-                    if connection_id:
-                        # Add the connection to the user
-                        add_connection_data = {
-                            "username": guacamole_username,
-                            "connection_id": connection_id
-                        }
-                        response = requests.post(f"{API_BASE_URL}/v1/guacamole/add-to-connection", json=add_connection_data)
-                        if response.status_code == 200:
+                    try:
+                        # Create the connection
+                        response = requests.post(f"{API_BASE_URL}/v2/guacamole/connections", json=connection_data)
+                        response.raise_for_status()
+                        result = response.json()
+                        
+                        if 'connection_id' in result:
+                            connection_id = result['connection_id']
+                            
+                            # Give permission to the user
+                            add_connection_data = {
+                                "username": guacamole_username,
+                                "connection_id": connection_id
+                            }
+                            response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection", json=add_connection_data)
+                            response.raise_for_status()
+                            
                             put_success(f"Connection {connection_name} created and added to user {guacamole_username} successfully.")
                         else:
-                            put_error(f"Failed to add connection {connection_name} to user {guacamole_username}. Error: {response.text}")
-                    else:
-                        put_error(f"Failed to create connection {connection_name}. Connection ID not received.")
-                else:
-                    put_error(f"Failed to create connection {connection_name}. Error: {response.text}")
+                            put_error(f"Failed to create connection {connection_name}. Connection ID not received.")
+                    except requests.RequestException as e:
+                        put_error(f"Failed to create or assign connection {connection_name}. Error: {str(e)}")
+
+        else:
+            put_error(f"No template found for training: {selected_training}")
 
     put_success("Training seats creation process completed!")

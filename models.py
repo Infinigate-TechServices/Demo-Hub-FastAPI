@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class RecordA(BaseModel):
     domain: Optional[str] = None
@@ -58,19 +58,12 @@ class AddUserToGroupInput(BaseModel):
     groupId: int
     
 class GuacamoleConnectionRequest(BaseModel):
-    connection_name: str
-    hostname: str
-    port: int = 3389
-    username: Optional[str] = ""
-    password: Optional[str] = ""
-    domain: Optional[str] = "STUDENT"
-    security: str = "NLA"
-    ignore_cert: bool = True
-    enable_font_smoothing: bool = True
-    server_layout: str = "de-de-qwertz"
-    guacd_hostname: Optional[str] = None
-    guacd_port: Optional[str] = None
-    
+    parentIdentifier: str
+    name: str
+    protocol: str
+    parameters: Dict[str, str]
+    attributes: Dict[str, Any]
+
 class AddConnectionToUserRequest(BaseModel):
     username: str
     connection_id: str

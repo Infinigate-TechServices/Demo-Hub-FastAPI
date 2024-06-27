@@ -184,6 +184,27 @@ async def get_connection_id_endpoint(connection_name: str):
     else:
         raise HTTPException(status_code=404, detail=f"No connection found with name: {connection_name}")
 
+@app.post("/api/v2/guacamole/connections")
+async def create_guacamole_connection_v2(request: GuacamoleConnectionRequest):
+    logger.info(f"Received connection request: {request}")
+    try:
+        result = guacamole.create_connection(request.dict())
+        if result and 'identifier' in result:
+            return {"message": "Connection created successfully", "connection_id": result['identifier']}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create connection")
+    except Exception as e:
+        logger.error(f"Error creating connection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create connection: {str(e)}")
+
+@app.post("/api/v2/guacamole/add-to-connection")
+async def add_connection_to_user_v2(request: AddConnectionToUserRequest):
+    result = guacamole.add_connection_to_user(request.username, request.connection_id)
+    if result:
+        return {"message": f"Connection {request.connection_id} added to user {request.username} successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add connection to user")
+
 # LLDAP endpoints
 @app.post("/api/v1/lldap/users")
 async def create_lldap_user(user: CreateUserInput):
