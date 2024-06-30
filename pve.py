@@ -65,10 +65,12 @@ while True:
         break
     index += 1
 
+from datetime import datetime
+
 def check_and_manage_vms():
     logger.info("Starting daily VM check and management process")
-    today = datetime.now().strftime('%d-%m-%Y')
-    logger.info(f"Checking VMs for date: {today}")
+    today = datetime.now().date()
+    logger.info(f"Checking VMs for date: {today.strftime('%d-%m-%Y')}")
     
     for node in proxmox.nodes.get():
         logger.info(f"Checking node: {node['node']}")
@@ -79,14 +81,22 @@ def check_and_manage_vms():
                 logger.info(f"VM {vm['name']} has tags: {tags}")
                 for tag in tags:
                     tag = tag.strip()
-                    if tag.startswith('start-') and tag[6:] == today:
+                    if tag.startswith('start-') and tag[6:] == today.strftime('%d-%m-%Y'):
                         logger.info(f"Starting VM {vm['name']} (ID: {vm['vmid']}) due to start tag")
                         start_vm(vm['name'])
-                    elif tag.startswith('end-') and tag[4:] == today:
-                        logger.info(f"Scheduling VM {vm['name']} (ID: {vm['vmid']}) for removal in 72 hours due to end tag")
-                        schedule_vm_for_deletion(vm['name'], vm['vmid'])
+                    elif tag.startswith('end-'):
+                        try:
+                            end_date = datetime.strptime(tag[4:], '%d-%m-%Y').date()
+                            if end_date <= today:
+                                logger.info(f"Scheduling VM {vm['name']} (ID: {vm['vmid']}) for removal due to expired end tag")
+                                schedule_vm_for_deletion(vm['name'], vm['vmid'])
+                        except ValueError:
+                            logger.error(f"Invalid date format in end tag for VM {vm['name']}: {tag}")
             else:
                 logger.info(f"VM {vm['name']} has no tags")
+    
+    check_scheduled_deletions()
+    logger.info("Completed daily VM check and management process")
     
     check_scheduled_deletions()
     logger.info("Completed daily VM check and management process")
