@@ -225,33 +225,38 @@ def remove_all_scheduled_vms():
     }
 
 def remove_vm(vm: VM):
-    vmid = get_vm_id(vm.name)
-    if vmid is None:
-        logger.warning(f"VM '{vm.name}' not found for removal.")
-        return f"VM '{vm.name}' not found."
-
-    logger.info(f"Attempting to remove VM '{vm.name}' (ID: {vmid})")
+    logger.info(f"Attempting to remove VM '{vm.name}'")
     
-    if stop_vm(vm.name):
-        timeout = 60  # 60 seconds timeout
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            for node in proxmox_nodes:
-                try:
-                    status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
-                    if status == 'stopped':
-                        proxmox.nodes(node).qemu(vmid).delete()
-                        logger.info(f"VM '{vm.name}' (ID: {vmid}) has been stopped and removed.")
-                        return f"VM '{vm.name}' with ID {vmid} has been stopped and removed."
-                except Exception as e:
-                    logger.error(f"Error checking/removing VM '{vm.name}' (ID: {vmid}) on node {node}: {str(e)}")
-            time.sleep(1)
-        
-        logger.error(f"Timeout waiting for VM '{vm.name}' (ID: {vmid}) to stop")
-        return f"Timeout waiting for VM '{vm.name}' to stop. Please check its status manually."
-    else:
-        logger.error(f"Failed to stop VM '{vm.name}' (ID: {vmid})")
-        return f"Failed to stop VM '{vm.name}'. Cannot proceed with removal."
+    for node in proxmox_nodes:
+        try:
+            vms = proxmox.nodes(node).qemu.get()
+            matching_vm = next((v for v in vms if v['name'] == vm.name), None)
+            
+            if matching_vm:
+                vmid = matching_vm['vmid']
+                logger.info(f"Found VM '{vm.name}' (ID: {vmid}) on node {node}")
+                
+                if stop_vm(vm.name):
+                    timeout = 60  # 60 seconds timeout
+                    start_time = time.time()
+                    while time.time() - start_time < timeout:
+                        status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
+                        if status == 'stopped':
+                            proxmox.nodes(node).qemu(vmid).delete()
+                            logger.info(f"VM '{vm.name}' (ID: {vmid}) has been stopped and removed from node {node}.")
+                            return f"VM '{vm.name}' with ID {vmid} has been stopped and removed from node {node}."
+                        time.sleep(1)
+                    
+                    logger.error(f"Timeout waiting for VM '{vm.name}' (ID: {vmid}) to stop on node {node}")
+                    return f"Timeout waiting for VM '{vm.name}' to stop on node {node}. Please check its status manually."
+                else:
+                    logger.error(f"Failed to stop VM '{vm.name}' (ID: {vmid}) on node {node}")
+                    return f"Failed to stop VM '{vm.name}' on node {node}. Cannot proceed with removal."
+        except Exception as e:
+            logger.error(f"Error processing VM '{vm.name}' on node {node}: {str(e)}")
+    
+    logger.warning(f"VM '{vm.name}' not found for removal on any node.")
+    return f"VM '{vm.name}' not found on any node."
 
 def list_vms():
     vms_list = []
