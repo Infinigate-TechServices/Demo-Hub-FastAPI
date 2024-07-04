@@ -103,6 +103,11 @@ async def get_scheduled_deletions():
 def shutdown_vm(vm_name: str):
     return pve.shutdown_vm(vm_name)
 
+@app.post("/api/v1/pve/remove-all-scheduled")
+async def remove_all_scheduled_vms():
+    result = pve.remove_all_scheduled_vms()
+    return result
+
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
 def create_proxy(proxy_host: ProxyHost):
