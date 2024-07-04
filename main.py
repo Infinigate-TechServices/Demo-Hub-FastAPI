@@ -38,8 +38,12 @@ def remove_training_seat(seat: TrainingSeat):
     return pve.remove_training_seat(seat)
 
 @app.post("/api/v1/pve/remove-vm")
-def remove_vm(vm: VM):
-    return pve.remove_vm(vm)
+async def remove_vm(vm: VM):
+    try:
+        result = pve.remove_vm(vm)
+        return {"message": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/pve/list-vms")
 def list_vms():
