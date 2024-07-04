@@ -187,6 +187,43 @@ def create_linked_clone(name: str, template_id: int):
     vmid = proxmox.cluster.nextid.get()
     return proxmox.nodes(best_node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=0)
 
+def remove_all_scheduled_vms():
+    logger.info("Starting immediate removal of all VMs scheduled for deletion")
+    removed_vms = []
+    failed_removals = []
+
+    with deletion_lock:
+        scheduled_vms = list(vms_scheduled_for_deletion.items())  # Create a copy of the dictionary items
+
+    for vm_name, info in scheduled_vms:
+        logger.info(f"Attempting to remove VM {vm_name} (ID: {info['id']}) immediately")
+        result = remove_vm(VM(name=vm_name, template_id=None))
+        
+        if "has been stopped and removed" in result:
+            logger.info(f"Successfully removed VM {vm_name} (ID: {info['id']})")
+            removed_vms.append(vm_name)
+            with deletion_lock:
+                if vm_name in vms_scheduled_for_deletion:
+                    del vms_scheduled_for_deletion[vm_name]
+        else:
+            logger.error(f"Failed to remove VM {vm_name} (ID: {info['id']}). Result: {result}")
+            failed_removals.append(vm_name)
+
+    total_scheduled = len(scheduled_vms)
+    total_removed = len(removed_vms)
+    total_failed = len(failed_removals)
+
+    logger.info(f"Removal process completed. "
+                f"Total scheduled: {total_scheduled}, "
+                f"Successfully removed: {total_removed}, "
+                f"Failed removals: {total_failed}")
+
+    return {
+        "message": f"Removal process completed. {total_removed} VMs removed, {total_failed} failed.",
+        "removed_vms": removed_vms,
+        "failed_removals": failed_removals
+    }
+
 def remove_vm(vm: VM):
     vmid = get_vm_id(vm.name)
     if vmid is None:
