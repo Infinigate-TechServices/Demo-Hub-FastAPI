@@ -6,7 +6,6 @@ import time
 import threading
 import json
 import logging
-import schedule
 from datetime import datetime, timedelta
 
 # Set up logging
@@ -65,10 +64,8 @@ while True:
         break
     index += 1
 
-from datetime import datetime
-
 def check_and_manage_vms():
-    logger.info("Starting daily VM check and management process")
+    logger.info("Starting VM check and management process")
     today = datetime.now().date()
     logger.info(f"Checking VMs for date: {today.strftime('%d-%m-%Y')}")
     
@@ -96,19 +93,19 @@ def check_and_manage_vms():
                 logger.info(f"VM {vm['name']} has no tags")
     
     check_scheduled_deletions()
-    logger.info("Completed daily VM check and management process")
-    
-    check_scheduled_deletions()
-    logger.info("Completed daily VM check and management process")
+    logger.info("Completed VM check and management process")
 
 def schedule_vm_for_deletion(vm_name, vm_id):
-    deletion_time = datetime.now() + timedelta(hours=72)
     with deletion_lock:
-        vms_scheduled_for_deletion[vm_name] = {
-            'id': vm_id,
-            'deletion_time': deletion_time
-        }
-    logger.info(f"VM {vm_name} (ID: {vm_id}) scheduled for deletion at {deletion_time}")
+        if vm_name not in vms_scheduled_for_deletion:
+            deletion_time = datetime.now() + timedelta(hours=72)
+            vms_scheduled_for_deletion[vm_name] = {
+                'id': vm_id,
+                'deletion_time': deletion_time
+            }
+            logger.info(f"VM {vm_name} (ID: {vm_id}) scheduled for deletion at {deletion_time}")
+        else:
+            logger.info(f"VM {vm_name} (ID: {vm_id}) already scheduled for deletion at {vms_scheduled_for_deletion[vm_name]['deletion_time']}")
 
 def check_scheduled_deletions():
     logger.info("Checking scheduled deletions")
@@ -129,25 +126,23 @@ def run_check_now():
     logger.info("Running VM check and management process immediately")
     check_and_manage_vms()
 
-def run_daily_check():
-    logger.info("Entering run_daily_check function")
-    schedule.every().day.at("02:00").do(check_and_manage_vms)
-    logger.info("Scheduled daily check for 02:00")
-    
-    # Add hourly check for scheduled deletions
-    schedule.every().hour.do(check_scheduled_deletions)
-    logger.info("Scheduled hourly check for deletions")
-    
+def run_background_check():
+    logger.info("Starting background VM check process")
     while True:
-        logger.debug("Checking for pending scheduled tasks")
-        schedule.run_pending()
-        time.sleep(60)  # Sleep for 60 seconds before checking again
+        try:
+            check_and_manage_vms()
+            logger.info("Completed VM check and management process")
+        except Exception as e:
+            logger.error(f"Error in VM check and management process: {e}")
+        
+        # Sleep for 5 minutes before the next check
+        time.sleep(300)  # 300 seconds = 5 minutes
 
 def start_background_check():
     logger.info("Starting background check thread")
-    thread = threading.Thread(target=run_daily_check)
-    thread.daemon = True
-    thread.start()
+    background_check_thread = threading.Thread(target=run_background_check)
+    background_check_thread.daemon = True
+    background_check_thread.start()
     logger.info("Background VM check thread started")
 
 def evaluate_nodes():
@@ -172,7 +167,6 @@ def create_training_seat(name: str, template_id: int):
     if not best_node:
         return {"error": "No suitable node found"}
 
-    # Correctly get the next available VMID
     vmid = proxmox.cluster.nextid.get()
     return proxmox.nodes(best_node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=1)
 
@@ -201,9 +195,7 @@ def remove_vm(vm: VM):
 
     logger.info(f"Attempting to remove VM '{vm.name}' (ID: {vmid})")
     
-    # First, try to stop the VM
     if stop_vm(vm.name):
-        # Wait for the VM to stop (with a timeout)
         timeout = 60  # 60 seconds timeout
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -211,7 +203,6 @@ def remove_vm(vm: VM):
                 try:
                     status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
                     if status == 'stopped':
-                        # Now try to remove the VM
                         proxmox.nodes(node).qemu(vmid).delete()
                         logger.info(f"VM '{vm.name}' (ID: {vmid}) has been stopped and removed.")
                         return f"VM '{vm.name}' with ID {vmid} has been stopped and removed."
@@ -225,36 +216,11 @@ def remove_vm(vm: VM):
         logger.error(f"Failed to stop VM '{vm.name}' (ID: {vmid})")
         return f"Failed to stop VM '{vm.name}'. Cannot proceed with removal."
 
-    # First, try to stop the VM
-    if stop_vm(vm.name):
-        # Wait for the VM to stop (with a timeout)
-        timeout = 60  # 60 seconds timeout
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            for node in proxmox_nodes:
-                try:
-                    status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
-                    if status == 'stopped':
-                        # Now try to remove the VM
-                        proxmox.nodes(node).qemu(vmid).delete()
-                        logger.info(f"VM '{vm.name}' (ID: {vmid}) has been stopped and removed.")
-                        return f"VM '{vm.name}' with ID {vmid} has been stopped and removed."
-                except Exception as e:
-                    logger.error(f"Error checking/removing VM '{vm.name}' (ID: {vmid}) on node {node}: {str(e)}")
-            time.sleep(1)
-        
-        logger.error(f"Timeout waiting for VM '{vm.name}' (ID: {vmid}) to stop")
-        return f"Timeout waiting for VM '{vm.name}' to stop. Please check its status manually."
-    else:
-        logger.error(f"Failed to stop VM '{vm.name}' (ID: {vmid})")
-        return f"Failed to stop VM '{vm.name}'. Cannot proceed with removal."
- 
 def list_vms():
     vms_list = []
     for node in proxmox_nodes:
         vms = proxmox.nodes(node).qemu().get()
         vms_list.extend(vms)
-    # Sort the VMs by name
     return sorted(vms_list, key=lambda x: x.get('name', ''))
 
 def get_vm_id(vm_name):
@@ -309,7 +275,6 @@ def add_tags_to_vm(request: AddTagsRequest):
     logger.info(f"Attempting to add tags to VM: {request.vm_name}")
     logger.debug(f"Tags to add: {request.tags}")
     
-    # Convert tags to a comma-separated string
     tags_string = ','.join(request.tags)
     logger.debug(f"Tags string: {tags_string}")
     
@@ -329,7 +294,7 @@ def add_tags_to_vm(request: AddTagsRequest):
     
     logger.warning(f"Failed to add tags to VM {request.vm_name} on any node")
     return False
-
+    
 def start_vm(vm_name: str):
     logger.info(f"Attempting to start VM: {vm_name}")
     vmid = get_vm_id(vm_name)
@@ -385,7 +350,9 @@ def shutdown_vm(vm_name: str):
     logger.error(f"Failed to shut down VM '{vm_name}' (ID: {vmid}) on any node")
     return {"error": f"Failed to shut down VM '{vm_name}'. Check logs for details."}
 
-
-start_background_check()
+# Initialize global variables
 vms_scheduled_for_deletion = {}
 deletion_lock = threading.Lock()
+
+# Start the background check thread
+start_background_check()
