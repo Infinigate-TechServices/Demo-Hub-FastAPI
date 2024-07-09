@@ -6,8 +6,23 @@ import time
 import re
 import unidecode
 import json
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 API_BASE_URL = "http://localhost:8081/api"
+
+# Email configuration
+SMTP_SERVER = os.getenv('SMTP_SERVER')
+SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
+SMTP_USERNAME = os.getenv('SMTP_USERNAME')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
+RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')
 
 # Load training templates from JSON
 with open("training_templates.json") as file:
@@ -22,12 +37,8 @@ def sanitize_name(name):
     
     # Replace umlauts with their two-letter equivalents
     umlaut_map = {
-        'ä': 'ae',
-        'ö': 'oe',
-        'ü': 'ue',
-        'Ä': 'Ae',
-        'Ö': 'Oe',
-        'Ü': 'Ue',
+        'ä': 'ae', 'ö': 'oe', 'ü': 'ue',
+        'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
         'ß': 'ss'
     }
     for umlaut, replacement in umlaut_map.items():
@@ -47,12 +58,39 @@ def sanitize_name(name):
     
     return name
 
+def send_deployment_email(ticket_number, deployed_users, proxmox_uris):
+    subject = f"Training Deployment Summary - Ticket {ticket_number}"
+    
+    body = "Deployment summary:\n\n"
+    body += "Deployed users:\n"
+    for user in deployed_users:
+        body += f"- {user}\n"
+    
+    body += "\nProxmox URIs of student seats for trainer:\n"
+    for user, uri in proxmox_uris.items():
+        body += f"- {user}: {uri}\n"
+
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_USERNAME
+    msg['To'] = RECIPIENT_EMAIL
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.ehlo()  # Can be omitted
+        server.starttls()  # Secure the connection
+        server.ehlo()  # Can be omitted
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        put_success(f"Deployment summary email for Ticket {ticket_number} sent successfully.")
+    except Exception as e:
+        put_error(f"Failed to send deployment summary email for Ticket {ticket_number}. Error: {str(e)}")
+
 def create_training_seats():
-    # Load training templates from JSON
-    with open("training_templates.json") as file:
-        training_templates = json.load(file)
+    put_info("Fetching available VM templates...")
             
-    put_info("Fetching available templates...")
     response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
     if response.status_code != 200:
         clear()
@@ -77,6 +115,14 @@ def create_training_seats():
     selected_template = selections["selected_template"][0]
     selected_template_id = int(selected_template.split("ID: ")[1].rstrip(")"))
     selected_template_name = selected_template.split(" (ID:")[0].replace("-Template", "")
+
+    # Request ticket number
+    ticket_number = input("Enter the ticket number (format: T20240709.0035)", required=True)
+
+    # Validate ticket number format
+    while not re.match(r'^T\d{8}\.\d{4}$', ticket_number):
+        put_error("Invalid ticket number format. Please use the format T20240709.0035.")
+        ticket_number = input("Enter the ticket number (format: T20240709.0035)", required=True)
 
     num_seats = input("Enter number of seats to create", type=NUMBER)
 
@@ -121,6 +167,9 @@ def create_training_seats():
 
     total_steps = len(seats) * 10  # Adjust the number of steps if needed
     current_step = 0
+
+    deployed_users = []
+    proxmox_uris = {}
 
     for idx, seat in enumerate(seats):
         # Step 1: Create VM
@@ -313,7 +362,11 @@ def create_training_seats():
             put_error(f"No template found for training: {selected_training}")
 
         time.sleep(2)
-        
+
+        # After creating the user
+        deployed_users.append(f"{seat['first_name'].lower()}.{seat['last_name'].lower()}")
+        proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://proxmox-{seat['first_name'].lower()}.{seat['last_name'].lower()}.student-access.infinigate-labs.com"
+
         # Step 10: Check if VM needs to be shut down
         current_step += 1
         put_info(f"Checking if VM needs to be shut down... ({current_step}/{total_steps})")
@@ -333,3 +386,9 @@ def create_training_seats():
             put_info(f"Start date {start_date} is today or in the past. Keeping VM {seat['name']} running.")
 
     put_success("Training seats creation process completed!")
+
+    # Send deployment summary email
+    send_deployment_email(ticket_number, deployed_users, proxmox_uris)
+
+if __name__ == "__main__":
+    create_training_seats()
