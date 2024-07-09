@@ -1,4 +1,4 @@
-from pywebio.input import input, checkbox, input_group, NUMBER, select
+from pywebio.input import input, checkbox, input_group, select, textarea
 from pywebio.output import put_text, put_error, put_loading, put_info, put_success, clear, put_warning
 import requests
 from datetime import datetime
@@ -99,7 +99,7 @@ def create_training_seats():
 
     clear()
     vms = response.json()
-    templates = [vm for vm in vms if '-Template' in vm.get('name', '')]
+    templates = [vm for vm in vms if '-template' in vm.get('name', '')]
     template_options = [f"{vm.get('name')} (ID: {vm.get('vmid')})" for vm in templates]
 
     # Get available training options from training_templates.json
@@ -114,47 +114,54 @@ def create_training_seats():
     selected_training = selections["selected_training"]
     selected_template = selections["selected_template"][0]
     selected_template_id = int(selected_template.split("ID: ")[1].rstrip(")"))
-    selected_template_name = selected_template.split(" (ID:")[0].replace("-Template", "")
+    selected_template_name = selected_template.split(" (ID:")[0].replace("-template", "")
 
     # Request ticket number
-    ticket_number = input("Enter the ticket number (format: T20240709.0035)", required=True)
+    ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
 
     # Validate ticket number format
     while not re.match(r'^T\d{8}\.\d{4}$', ticket_number):
-        put_error("Invalid ticket number format. Please use the format T20240709.0035.")
-        ticket_number = input("Enter the ticket number (format: T20240709.0035)", required=True)
-
-    num_seats = input("Enter number of seats to create", type=NUMBER)
+        put_error("Invalid ticket number format. Please use the format T20240709.0037.")
+        ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
 
     training_dates = input_group("Enter training dates", [
         input("Training Start Date (DD-MM-YYYY)", name="start_date", required=True),
         input("Training End Date (DD-MM-YYYY)", name="end_date", required=True)
     ])
-
+    
+    # Get student names
+    students_input = textarea("Enter student names (one per line):", rows=10)
+    
+    # Process the input
+    students = [line.strip() for line in students_input.split('\n') if line.strip()]
+    
     seats = []
-    for i in range(num_seats):
-        while True:
-            seat_info = input_group(f"Enter details for seat {i + 1}", [
-                input("First Name", name="first_name", required=True),
-                input("Last Name", name="last_name", required=True),
-            ])
-            
-            first_name = sanitize_name(seat_info['first_name'])
-            last_name = sanitize_name(seat_info['last_name'])
-            
-            if first_name and last_name:
-                break
-            else:
-                put_error("Names cannot be empty. Please enter valid names.")
+    for student in students:
+        # Split the name into first and last name
+        name_parts = student.split(maxsplit=1)
+        if len(name_parts) < 2:
+            put_warning(f"Skipping invalid name: {student}")
+            continue
+        
+        first_name, last_name = name_parts
+        
+        first_name = sanitize_name(first_name)
+        last_name = sanitize_name(last_name)
+        
+        if first_name and last_name:
+            vm_name = f"{first_name}-{last_name}-{selected_template_name}"
+            seats.append({
+                "name": vm_name,
+                "template_id": selected_template_id,
+                "first_name": first_name,
+                "last_name": last_name,
+            })
+        else:
+            put_warning(f"Skipping invalid name: {student}")
 
-        vm_name = f"{first_name}-{last_name}-{selected_template_name}"
-        seats.append({
-            "name": vm_name,
-            "template_id": selected_template_id,
-            "first_name": first_name,
-            "last_name": last_name,
-        })
-
+    num_seats = len(seats)
+    put_info(f"Number of valid seats to create: {num_seats}")
+    
     # Define group options
     group_options = [
         ("Trainingsteilnehmer", 6),

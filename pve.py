@@ -1,6 +1,8 @@
 from proxmoxer import ProxmoxAPI
+from proxmoxer.backends import https
 from models import TrainingSeat, VM, AddTagsRequest
 import os
+import sys
 from dotenv import load_dotenv
 import time
 import threading
@@ -16,9 +18,8 @@ load_dotenv()
 
 # Get Proxmox connection details from environment variables
 proxmox_host = os.getenv('PVE_HOST')
-proxmox_user = os.getenv('PVE_USER')
-proxmox_password = os.getenv('PVE_PASSWORD')
-template_id = os.getenv('TEMPLATE_ID')
+proxmox_token_id = os.getenv('PVE_TOKEN_ID')
+proxmox_token_secret = os.getenv('PVE_TOKEN_SECRET')
 proxmox_port = int(os.getenv('PVE_PORT', 443))
 
 # Initialize the Proxmox API client
@@ -26,14 +27,19 @@ proxmox = None
 
 def authenticate_proxmox():
     global proxmox
+    
+    # Split the token ID into user and token_name
+    user, token_name = proxmox_token_id.rsplit('!', 1)
+    
     proxmox = ProxmoxAPI(
-        host=proxmox_host,
-        user=proxmox_user,
-        password=proxmox_password,
+        proxmox_host,
+        user=user,
+        token_name=token_name,
+        token_value=proxmox_token_secret,
         port=proxmox_port,
         verify_ssl=False
     )
-    print("Authenticated with Proxmox")
+    print("Authenticated with Proxmox using API token")
 
 # Authenticate initially
 authenticate_proxmox()
