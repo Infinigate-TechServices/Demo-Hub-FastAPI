@@ -11,11 +11,11 @@ import pywebio_trainings
 def pywebio_main():
     while True:
         choice = actions('Choose an option', [
-            'DNS Management', 
-            'PVE Management', 
-            'Nginx Proxy Management',
-            'Guacamole Management',
-            'LDAP Management',
+            #'DNS Management', 
+            #'PVE Management', 
+            #'Nginx Proxy Management',
+            #'Guacamole Management',
+            #'LDAP Management',
             'Create Training Seats',
             'Exit'
         ])
