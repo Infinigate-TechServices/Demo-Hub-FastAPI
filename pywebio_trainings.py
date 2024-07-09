@@ -267,7 +267,7 @@ def create_training_seats():
         current_step += 1
         put_info(f"Finding Proxmox IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
         with put_loading():
-            time.sleep(15)
+            time.sleep(30)
             response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip-pve/{seat['name']}")
         if response.status_code == 200:
             seat_ip_proxmox = response.json().get('ip_address')
@@ -284,7 +284,7 @@ def create_training_seats():
         current_step += 1
         put_info(f"Finding Guacamole IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
         with put_loading():
-            time.sleep(15)
+            time.sleep(30)
             response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{seat['name']}")
         if response.status_code == 200:
             seat_ip = response.json().get('ip_address')
