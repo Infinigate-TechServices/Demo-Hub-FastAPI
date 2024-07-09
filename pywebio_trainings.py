@@ -365,8 +365,8 @@ def create_training_seats():
 
         # After creating the user
         deployed_users.append(f"{seat['first_name'].lower()}.{seat['last_name'].lower()}")
-        proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://proxmox-{seat['first_name'].lower()}.{seat['last_name'].lower()}.student-access.infinigate-labs.com"
-
+        proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
+        
         # Step 10: Check if VM needs to be shut down
         current_step += 1
         put_info(f"Checking if VM needs to be shut down... ({current_step}/{total_steps})")
