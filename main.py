@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput
 import cf
 import pve
 import guacamole
@@ -280,6 +280,56 @@ async def create_authentik_user(user: CreateAuthentikUserInput):
     try:
         new_user = authentik.create_user_in_authentik(user.username, user.email, user.name, user.password)
         return {"message": "User created successfully in Authentik", "user": new_user}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/authentik/add-user-to-group")
+async def add_authentik_user_to_group(input: AddAuthentikUserToGroupInput):
+    try:
+        result = authentik.add_user_to_group(input.user_id, input.group_id)
+        return result
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/v1/authentik/users/{username}")
+async def get_authentik_user_id(username: str):
+    try:
+        user_id = authentik.get_user_id(username)
+        return {"username": username, "user_id": user_id}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/authentik/groups/{group_name}")
+async def get_authentik_group_id(group_name: str):
+    try:
+        group_id = authentik.get_group_id(group_name)
+        return {"group_name": group_name, "group_id": group_id}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/authentik/users")
+async def list_authentik_users():
+    try:
+        users = authentik.list_users()
+        return {"users": users}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/authentik/groups")
+async def list_authentik_groups():
+    try:
+        groups = authentik.list_groups()
+        return {"groups": groups}
     except HTTPException as e:
         raise e
     except Exception as e:

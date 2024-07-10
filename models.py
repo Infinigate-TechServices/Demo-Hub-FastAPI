@@ -72,8 +72,13 @@ class AddUserToConnectionGroupRequest(BaseModel):
     username: str
     connection_group_id: str
 
+# Authentik models
 class CreateAuthentikUserInput(BaseModel):
     username: str
     email: str
     name: str
     password: str
+
+class AddAuthentikUserToGroupInput(BaseModel):
+    user_id: int
+    group_id: int
