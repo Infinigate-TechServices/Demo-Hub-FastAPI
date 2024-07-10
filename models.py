@@ -71,3 +71,9 @@ class AddConnectionToUserRequest(BaseModel):
 class AddUserToConnectionGroupRequest(BaseModel):
     username: str
     connection_group_id: str
+
+class CreateAuthentikUserInput(BaseModel):
+    username: str
+    email: str
+    name: str
+    password: str

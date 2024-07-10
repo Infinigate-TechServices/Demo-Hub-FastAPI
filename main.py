@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest
+from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput
 import cf
 import pve
 import guacamole
 import lldap
+import authentik
 from nginx_proxy_manager import list_proxy_hosts, create_proxy_host, remove_proxy_host
 from pywebio_app import pywebio_main
 import logging
@@ -272,6 +273,17 @@ async def add_user_to_group(input: AddUserToGroupInput):
             raise HTTPException(status_code=400, detail="Failed to add user to group")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+# Authentik endpoints
+@app.post("/api/v1/authentik/users")
+async def create_authentik_user(user: CreateAuthentikUserInput):
+    try:
+        new_user = authentik.create_user_in_authentik(user.username, user.email, user.name, user.password)
+        return {"message": "User created successfully in Authentik", "user": new_user}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Mounting PyWebIO app
 app.mount("/", asgi_app(pywebio_main), name="pywebio")
