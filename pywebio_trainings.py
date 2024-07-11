@@ -11,11 +11,18 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import secrets
+import string
 
 # Load environment variables
 load_dotenv()
 
 API_BASE_URL = "http://localhost:8081/api"
+
+def generate_password(length=12):
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+    password = ''.join(secrets.choice(alphabet) for i in range(length))
+    return password
 
 # Email configuration
 SMTP_SERVER = os.getenv('SMTP_SERVER')
@@ -58,7 +65,7 @@ def sanitize_name(name):
     
     return name
 
-def send_deployment_email(ticket_number, deployed_users, proxmox_uris):
+def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords):
     subject = f"Training Deployment Summary - Ticket {ticket_number}"
     
     body = "Deployment summary:\n\n"
@@ -69,6 +76,10 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris):
     body += "\nProxmox URIs of student seats for trainer:\n"
     for user, uri in proxmox_uris.items():
         body += f"- {user}: {uri}\n"
+
+    body += "\nUser Credentials:\n"
+    for user, password in user_passwords.items():
+        body += f"- {user}: {password}\n"
 
     msg = MIMEMultipart()
     msg['From'] = SMTP_USERNAME
@@ -161,22 +172,13 @@ def create_training_seats():
 
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
-    
-    # Define group options
-    group_options = [
-        ("Trainingsteilnehmer", 6),
-        ("Trainingsteilnehmer ohne Mail", 10)
-    ]
-
-    # Ask for the group selection
-    selected_group = select("Select the group for the students", options=[g[0] for g in group_options])
-    selected_group_id = next(g[1] for g in group_options if g[0] == selected_group)
 
     total_steps = len(seats) * 10  # Adjust the number of steps if needed
     current_step = 0
 
     deployed_users = []
     proxmox_uris = {}
+    user_passwords = {}
 
     for idx, seat in enumerate(seats):
         # Step 1: Create VM
@@ -220,37 +222,41 @@ def create_training_seats():
 
         time.sleep(5)
 
-        # Step 4: Create User in LDAP
+        # Step 4: Create User in Authentik
         current_step += 1
-        put_info(f"Creating LDAP user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
-        lldap_user_data = {
-            "id": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}",
+        put_info(f"Creating Authentik user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+        
+        # Generate a random password
+        password = generate_password()
+        user_passwords[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = password
+        
+        authentik_user_data = {
+            "username": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}",
             "email": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}@infinigate-labs.com",
-            "displayName": f"{seat['first_name']} {seat['last_name']}",
-            "firstName": seat['first_name'],
-            "lastName": seat['last_name']
+            "name": f"{seat['first_name']} {seat['last_name']}",
+            "password": password
         }
         with put_loading():
-            response = requests.post(f"{API_BASE_URL}/v1/lldap/users", json=lldap_user_data)
+            response = requests.post(f"{API_BASE_URL}/v1/authentik/users", json=authentik_user_data)
         if response.status_code != 200:
-            put_error(f"Failed to create LLDAP user for {seat['name']}. Error: {response.text}")
+            put_error(f"Failed to create Authentik user for {seat['name']}. Error: {response.text}")
             continue
 
         time.sleep(5)
 
         # Step 5: Add user to group in LDAP
-        current_step += 1
-        put_info(f"Adding user {seat['first_name']} {seat['last_name']} to group... ({current_step}/{total_steps})")
-        add_to_group_data = {
-            "userId": lldap_user_data["id"],
-            "groupId": selected_group_id
-        }
-        with put_loading():
-            response = requests.post(f"{API_BASE_URL}/v1/lldap/add-user-to-group", json=add_to_group_data)
-        if response.status_code != 200:
-            put_error(f"Failed to add user {seat['name']} to group. Error: {response.text}")
+        #current_step += 1
+        #put_info(f"Adding user {seat['first_name']} {seat['last_name']} to group... ({current_step}/{total_steps})")
+        #add_to_group_data = {
+        #    "userId": lldap_user_data["id"],
+        #    "groupId": selected_group_id
+        #}
+        #with put_loading():
+        #    response = requests.post(f"{API_BASE_URL}/v1/lldap/add-user-to-group", json=add_to_group_data)
+        #if response.status_code != 200:
+        #    put_error(f"Failed to add user {seat['name']} to group. Error: {response.text}")
 
-        time.sleep(2)
+        #time.sleep(2)
 
         # Step 6: Create User in Guacamole
         current_step += 1
@@ -394,8 +400,8 @@ def create_training_seats():
 
     put_success("Training seats creation process completed!")
 
-    # Send deployment summary email
-    send_deployment_email(ticket_number, deployed_users, proxmox_uris)
+    # Step 11: Send deployment summary email
+    send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords)
 
 if __name__ == "__main__":
     create_training_seats()
