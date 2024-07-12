@@ -1,9 +1,8 @@
-# guacamole.py
-
 import requests
 import urllib.parse
 import logging
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,6 +17,8 @@ class Guac:
         self.url = url
         self.token = None
         self.headers = {'Accept': 'application/json'}
+        self.token_expiry = None
+        self.token_lifetime = 60 * 60  # Assume 1 hour token lifetime, adjust as needed
         self.auth(os.getenv('GUACAMOLE_USERNAME'), os.getenv('GUACAMOLE_PASSWORD'))
 
     def urljoin(self, base, url, allow_fragments=True):
@@ -35,7 +36,30 @@ class Guac:
         self.authuser = d['username']
         self.dataSource = d['dataSource']
         self.availableDataSources = d['availableDataSources']
+        self.token_expiry = time.time() + self.token_lifetime
         return self.token
+
+    def is_token_valid(self):
+        return self.token and time.time() < self.token_expiry
+
+    def refresh_token(self):
+        if not self.is_token_valid():
+            self.auth(os.getenv('GUACAMOLE_USERNAME'), os.getenv('GUACAMOLE_PASSWORD'))
+
+    def api_request(self, method, endpoint, **kwargs):
+        self.refresh_token()
+        url = self.urljoin(self.url, endpoint)
+        kwargs.setdefault('params', {})['token'] = self.token
+        kwargs.setdefault('headers', {}).update(self.headers)
+        
+        response = requests.request(method, url, **kwargs)
+        
+        if response.status_code == 401:  # Unauthorized
+            self.refresh_token()
+            kwargs['params']['token'] = self.token
+            response = requests.request(method, url, **kwargs)
+        
+        return response
 
     def create_user(self, username):
         data = {
@@ -51,8 +75,7 @@ class Guac:
                 "timezone": None,
             }
         }
-        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users')
-        r = requests.post(url, headers=self.headers, params={'token': self.token}, json=data)
+        r = self.api_request('POST', f'api/session/data/{self.dataSource}/users', json=data)
         if r.status_code == 200:
             log.info(f"User {username} created successfully")
             return True
@@ -61,8 +84,7 @@ class Guac:
             return False
 
     def remove_user(self, username):
-        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}')
-        r = requests.delete(url, headers=self.headers, params={'token': self.token})
+        r = self.api_request('DELETE', f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}')
         if r.status_code == 204:
             log.info(f"User {username} removed successfully")
             return True
@@ -71,8 +93,7 @@ class Guac:
             return False
 
     def list_users(self):
-        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users')
-        r = requests.get(url, headers=self.headers, params={'token': self.token})
+        r = self.api_request('GET', f'api/session/data/{self.dataSource}/users')
         if r.status_code == 200:
             log.info("Retrieved user list successfully")
             return r.json()
@@ -87,30 +108,27 @@ class Guac:
         return ''.join(secrets.choice(alphabet) for _ in range(length))
 
     def newConnection(self, data):
-        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/connections')
-        r = requests.post(url, headers=self.headers, params={'token': self.token}, json=data)
+        r = self.api_request('POST', f'api/session/data/{self.dataSource}/connections', json=data)
         return r.json()
 
     def givePermissionToConnection(self, username, connectionID):
-        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}/permissions')
         data = [{
             "op": "add",
             "path": f"/connectionPermissions/{connectionID}",
             "value": "READ"
         }]
-        r = requests.patch(url, headers=self.headers, params={'token': self.token}, json=data)
+        r = self.api_request('PATCH', f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}/permissions', json=data)
         if r.status_code == 204:
             return True
         return False
     
     def add_user_to_connection_group(self, username, connection_group_id):
-        url = self.urljoin(self.url, f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}/permissions')
         data = [{
             "op": "add",
             "path": f"/connectionGroupPermissions/{connection_group_id}",
             "value": "READ"
         }]
-        r = requests.patch(url, headers=self.headers, params={'token': self.token}, json=data)
+        r = self.api_request('PATCH', f'api/session/data/{self.dataSource}/users/{self.urlescape(username)}/permissions', json=data)
         if r.status_code == 204:
             return True
         return False
