@@ -287,21 +287,21 @@ def create_training_seats():
         time.sleep(2)
 
         # Step 8: Find Guacamole Seat IP
-        current_step += 1
-        put_info(f"Finding Guacamole IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
-        with put_loading():
-            time.sleep(30)
-            response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{seat['name']}")
-        if response.status_code == 200:
-            seat_ip = response.json().get('ip_address')
-            if seat_ip:
-                put_success(f"IP address for seat {seat['name']}: {seat_ip}")
-            else:
-                put_error(f"Failed to find IP for seat {seat['name']}.")
-        else:
-            put_error(f"Failed to find IP for seat {seat['name']}. Error: {response.text}")
+        #current_step += 1
+        #put_info(f"Finding Guacamole IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
+        #with put_loading():
+        #    time.sleep(30)
+        #    response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{seat['name']}")
+        #if response.status_code == 200:
+        #    seat_ip = response.json().get('ip_address')
+        #    if seat_ip:
+        #        put_success(f"IP address for seat {seat['name']}: {seat_ip}")
+        #    else:
+        #        put_error(f"Failed to find IP for seat {seat['name']}.")
+        #else:
+        #    put_error(f"Failed to find IP for seat {seat['name']}. Error: {response.text}")
 
-        time.sleep(2)
+        #time.sleep(2)
 
         # Step 9: Create connections for Guacamole User
         current_step += 1
@@ -322,7 +322,7 @@ def create_training_seats():
                     "protocol": connection["protocol"],
                     "parameters": {},
                     "attributes": {
-                        "guacd-hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip),
+                        "guacd-hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip_proxmox),
                         "guacd-port": str(connection["proxy_port"])
                     }
                 }
