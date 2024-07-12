@@ -31,10 +31,6 @@ SMTP_USERNAME = os.getenv('SMTP_USERNAME')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')
 
-# Load training templates from JSON
-with open("training_templates.json") as file:
-    training_templates = json.load(file)
-
 def sanitize_name(name):
     # Remove leading/trailing whitespace
     name = name.strip()
@@ -100,6 +96,17 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         put_error(f"Failed to send deployment summary email for Ticket {ticket_number}. Error: {str(e)}")
 
 def create_training_seats():
+
+    try:
+        with open("training_templates.json") as file:
+            training_templates = json.load(file)
+    except FileNotFoundError:
+        put_error("training_templates.json file not found.")
+        return
+    except json.JSONDecodeError:
+        put_error("Error decoding training_templates.json. Please check the file format.")
+        return
+    
     put_info("Fetching available VM templates...")
             
     response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
