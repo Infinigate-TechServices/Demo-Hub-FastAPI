@@ -19,8 +19,8 @@ load_dotenv()
 
 API_BASE_URL = "http://localhost:8081/api"
 
-def generate_password(length=12):
-    alphabet = string.ascii_letters + string.digits + string.punctuation
+def generate_password(length=8):
+    alphabet = string.ascii_letters + string.digits
     password = ''.join(secrets.choice(alphabet) for i in range(length))
     return password
 
@@ -91,7 +91,8 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        put_success(f"Deployment summary email for Ticket {ticket_number} sent successfully.")
+        clear()
+        put_success(f"Deployment summary email for Ticket {ticket_number} sent successfully.\n\nEmail Body:\n{body}")
     except Exception as e:
         put_error(f"Failed to send deployment summary email for Ticket {ticket_number}. Error: {str(e)}")
 
@@ -180,7 +181,7 @@ def create_training_seats():
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
 
-    total_steps = len(seats) * 10  # Adjust the number of steps if needed
+    total_steps = len(seats) * 7  # Adjust the number of steps if needed
     current_step = 0
 
     deployed_users = []
