@@ -19,16 +19,31 @@ def create_user_in_authentik(username: str, email: str, name: str, password: str
     payload = {
         "username": username,
         "email": email,
-        "name": name,
-        "password": password
+        "name": name
     }
 
     response = requests.post(url, json=payload, headers=get_headers())
 
     if response.status_code == 201:
-        return response.json()
+        user_data = response.json()
+        user_id = user_data['pk']
+        set_user_password(user_id, password)
+        return user_data
     else:
         raise HTTPException(status_code=response.status_code, detail=f"Failed to create user: {response.text}")
+
+def set_user_password(user_id: int, password: str):
+    url = f"{AUTHENTIK_URL}/api/v3/core/users/{user_id}/set_password/"
+    payload = {
+        "password": password
+    }
+
+    response = requests.post(url, json=payload, headers=get_headers())
+
+    if response.status_code == 204:
+        return {"message": f"Password set successfully for user {user_id}"}
+    else:
+        raise HTTPException(status_code=response.status_code, detail=f"Failed to set password: {response.text}")
 
 def add_user_to_group(user_id: int, group_id: int):
     url = f"{AUTHENTIK_URL}/api/v3/core/groups/{group_id}/users/"

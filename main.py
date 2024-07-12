@@ -279,7 +279,18 @@ async def add_user_to_group(input: AddUserToGroupInput):
 async def create_authentik_user(user: CreateAuthentikUserInput):
     try:
         new_user = authentik.create_user_in_authentik(user.username, user.email, user.name, user.password)
-        return {"message": "User created successfully in Authentik", "user": new_user}
+        return {"message": "User created successfully in Authentik with password set", "user": new_user}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/authentik/set_password")
+async def set_authentik_user_password(username: str, password: str):
+    try:
+        user_id = authentik.get_user_id(username)
+        result = authentik.set_user_password(user_id, password)
+        return result
     except HTTPException as e:
         raise e
     except Exception as e:
