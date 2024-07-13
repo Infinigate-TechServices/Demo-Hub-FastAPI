@@ -181,7 +181,7 @@ def create_training_seats():
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
 
-    total_steps = len(seats) * 7  # Adjust the number of steps if needed
+    total_steps = len(seats) * 8  # Adjust the number of steps if needed
     current_step = 0
 
     deployed_users = []
