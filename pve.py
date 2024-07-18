@@ -283,6 +283,18 @@ def get_vm_id(vm_name):
     logger.warning(f"VM not found: {vm_name}")
     return None
 
+def get_vm_id_and_node(vm_name):
+    logger.debug(f"Searching for VM with name: {vm_name}")
+    for node in proxmox.nodes.get():
+        logger.debug(f"Checking node: {node['node']}")
+        for vm in proxmox.nodes(node['node']).qemu.get():
+            logger.debug(f"Found VM: {vm['name']} (ID: {vm['vmid']})")
+            if vm['name'] == vm_name:
+                logger.info(f"VM found: {vm_name} (ID: {vm['vmid']}) on node {node['node']}")
+                return vm['vmid'], node['node']
+    logger.warning(f"VM not found: {vm_name}")
+    return None, None
+
 def find_seat_ip(vm_name: str) -> str:
     for node in proxmox.nodes.get():
         for vm in proxmox.nodes(node['node']).qemu.get():
@@ -304,19 +316,24 @@ def find_seat_ip(vm_name: str) -> str:
                     print(f"Error processing VM {vm_name}: {str(e)}")
     return None
 
-def find_seat_ip_pve(vm_name: str) -> str:
+def find_seat_ip_pve(vm_name: str) -> dict:
     for node in proxmox.nodes.get():
-        for vm in proxmox.nodes(node['node']).qemu.get():
+        node_name = node['node']
+        for vm in proxmox.nodes(node_name).qemu.get():
             if vm['name'] == vm_name:
                 try:
-                    interfaces_data = proxmox.nodes(node['node']).qemu(vm['vmid']).agent.get('network-get-interfaces')
+                    interfaces_data = proxmox.nodes(node_name).qemu(vm['vmid']).agent.get('network-get-interfaces')
                     for interface in interfaces_data.get('result', []):
                         if 'ip-addresses' in interface:
                             for ip_addr in interface['ip-addresses']:
                                 if ip_addr['ip-address-type'] == 'ipv4' and ip_addr['ip-address'].startswith('100.64.'):
-                                    return ip_addr['ip-address']
+                                    return {
+                                        "ip_address": ip_addr['ip-address'],
+                                        "node": node_name,
+                                        "vmid": vm['vmid']
+                                    }
                 except Exception as e:
-                    print(f"Error processing VM {vm_name}: {str(e)}")
+                    print(f"Error processing VM {vm_name} on node {node_name}: {str(e)}")
     return None
 
 def add_tags_to_vm(request: AddTagsRequest):
@@ -345,22 +362,19 @@ def add_tags_to_vm(request: AddTagsRequest):
     
 def start_vm(vm_name: str):
     logger.info(f"Attempting to start VM: {vm_name}")
-    vmid = get_vm_id(vm_name)
-    if vmid is None:
+    vmid, node = get_vm_id_and_node(vm_name)
+    if vmid is None or node is None:
         logger.error(f"VM '{vm_name}' not found")
         return {"error": f"VM '{vm_name}' not found"}
     
-    for node in proxmox_nodes:
-        try:
-            logger.info(f"Attempting to start VM '{vm_name}' on node {node}")
-            result = proxmox.nodes(node).qemu(vmid).status.start.post()
-            logger.info(f"Start command sent for VM '{vm_name}'. Result: {result}")
-            return {"message": f"VM '{vm_name}' start command sent successfully"}
-        except Exception as e:
-            logger.error(f"Error starting VM '{vm_name}' on node {node}: {str(e)}")
-    
-    logger.error(f"VM '{vm_name}' could not be started on any node")
-    return {"error": f"VM '{vm_name}' could not be started on any node"}
+    try:
+        logger.info(f"Attempting to start VM '{vm_name}' (ID: {vmid}) on node {node}")
+        result = proxmox.nodes(node).qemu(vmid).status.start.post()
+        logger.info(f"Start command sent for VM '{vm_name}'. Result: {result}")
+        return {"message": f"VM '{vm_name}' start command sent successfully"}
+    except Exception as e:
+        logger.error(f"Error starting VM '{vm_name}' on node {node}: {str(e)}")
+        return {"error": f"VM '{vm_name}' could not be started. Error: {str(e)}"}
 
 def stop_vm(vm_name: str) -> bool:
     vmid = get_vm_id(vm_name)

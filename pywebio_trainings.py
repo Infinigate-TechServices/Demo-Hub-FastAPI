@@ -61,7 +61,7 @@ def sanitize_name(name):
     
     return name
 
-def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords):
+def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details):
     subject = f"Training Deployment Summary - Ticket {ticket_number}"
     
     body = "Deployment summary:\n\n"
@@ -72,6 +72,13 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
     body += "\nProxmox URIs of student seats for trainer:\n"
     for user, uri in proxmox_uris.items():
         body += f"- {user}: {uri}\n"
+
+    body += "\nVM Details:\n"
+    for vm_name, details in vm_details.items():
+        body += f"- {vm_name}:\n"
+        body += f"  IP: {details['ip']}\n"
+        body += f"  Node: {details['node']}\n"
+        body += f"  VMID: {details['vmid']}\n"
 
     body += "\nUser Credentials:\n"
     for user, password in user_passwords.items():
@@ -97,7 +104,6 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         put_error(f"Failed to send deployment summary email for Ticket {ticket_number}. Error: {str(e)}")
 
 def create_training_seats():
-
     try:
         with open("training_templates.json") as file:
             training_templates = json.load(file)
@@ -108,32 +114,17 @@ def create_training_seats():
         put_error("Error decoding training_templates.json. Please check the file format.")
         return
     
-    put_info("Fetching available VM templates...")
-            
-    response = requests.get(f"{API_BASE_URL}/v1/pve/list-vms")
-    if response.status_code != 200:
-        clear()
-        put_error("Failed to retrieve templates.")
-        return
-
-    clear()
-    vms = response.json()
-    templates = [vm for vm in vms if '-template' in vm.get('name', '')]
-    template_options = [f"{vm.get('name')} (ID: {vm.get('vmid')})" for vm in templates]
-
     # Get available training options from training_templates.json
     training_options = [template["name"] for template in training_templates]
 
-    # Ask the user to select the desired training and VM template
-    selections = input_group("Select the training and VM template", [
-        select("Training", name="selected_training", options=training_options, required=True),
-        checkbox("VM Template", name="selected_template", options=template_options, required=True)
-    ])
+    # Ask the user to select the desired training
+    selected_training = select("Select the training", options=training_options, required=True)
 
-    selected_training = selections["selected_training"]
-    selected_template = selections["selected_template"][0]
-    selected_template_id = int(selected_template.split("ID: ")[1].rstrip(")"))
-    selected_template_name = selected_template.split(" (ID:")[0].replace("-template", "")
+    # Find the selected training template
+    selected_template = next((t for t in training_templates if t["name"] == selected_training), None)
+    if not selected_template:
+        put_error(f"No template found for training: {selected_training}")
+        return
 
     # Request ticket number
     ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
@@ -168,10 +159,7 @@ def create_training_seats():
         last_name = sanitize_name(last_name)
         
         if first_name and last_name:
-            vm_name = f"{first_name}-{last_name}-{selected_template_name}"
             seats.append({
-                "name": vm_name,
-                "template_id": selected_template_id,
                 "first_name": first_name,
                 "last_name": last_name,
             })
@@ -181,56 +169,83 @@ def create_training_seats():
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
 
-    total_steps = len(seats) * 8  # Adjust the number of steps if needed
+    total_steps = len(seats) * 9  # Adjust the number of steps if needed
+    
     current_step = 0
-
     deployed_users = []
     proxmox_uris = {}
     user_passwords = {}
+    vm_details = {}
 
     for idx, seat in enumerate(seats):
-        # Step 1: Create VM
+        # Step 1: Get the best available node
         current_step += 1
-        put_info(f"Creating VM for {seat['name']}... ({current_step}/{total_steps})")
+        put_info(f"Finding the best available node for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+        with put_loading():
+            response = requests.get(f"{API_BASE_URL}/v1/pve/evaluate-nodes")
+        if response.status_code != 200:
+            put_error(f"Failed to get the best available node. Error: {response.text}")
+            continue
+
+        best_node = response.json().get('best_node')
+        if not best_node:
+            put_error("No suitable node found.")
+            continue
+
+        put_success(f"Best node selected: {best_node}")
+
+        # Get the template ID for the best node
+        template_id = selected_template["template_ids"].get(best_node)
+        if not template_id:
+            put_error(f"No template ID found for node {best_node}")
+            continue
+
+        # Create VM name
+        vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
+
+        # Step 2: Create VM
+        current_step += 1
+        put_info(f"Creating VM for {vm_name} on node {best_node}... ({current_step}/{total_steps})")
         with put_loading():
             response = requests.post(f"{API_BASE_URL}/v1/pve/create-linked-clone", json={
-                "name": seat['name'],
-                "template_id": seat['template_id']
+                "name": vm_name,
+                "template_id": template_id,
+                "node": best_node
             })
         if response.status_code != 200:
-            put_error(f"Failed to create VM for {seat['name']}.")
+            put_error(f"Failed to create VM for {vm_name}.")
             continue
 
         time.sleep(5)
 
-        # Step 2: Adding tags to VM
+        # Step 3: Adding tags to VM
         current_step += 1
-        put_info(f"Adding tags to VM {seat['name']}... ({current_step}/{total_steps})")
+        put_info(f"Adding tags to VM {vm_name}... ({current_step}/{total_steps})")
         tags = [
             f"start-{training_dates['start_date']}",
             f"end-{training_dates['end_date']}"
         ]
         with put_loading():
             response = requests.post(f"{API_BASE_URL}/v1/pve/add-tags-to-vm", json={
-                "vm_name": seat['name'],
+                "vm_name": vm_name,
                 "tags": tags
             })
         if response.status_code != 200:
-            put_error(f"Failed to add tags to VM {seat['name']}. Error: {response.text}")
+            put_error(f"Failed to add tags to VM {vm_name}. Error: {response.text}")
 
         time.sleep(5)
 
-        # Step 3: Starting VM
+        # Step 4: Starting VM
         current_step += 1
-        put_info(f"Starting VM {seat['name']}... ({current_step}/{total_steps})")
+        put_info(f"Starting VM {vm_name}... ({current_step}/{total_steps})")
         with put_loading():
-            response = requests.post(f"{API_BASE_URL}/v1/pve/start-vm/{seat['name']}")
+            response = requests.post(f"{API_BASE_URL}/v1/pve/start-vm/{vm_name}")
         if response.status_code != 200:
-            put_error(f"Failed to start VM {seat['name']}. Error: {response.text}")
+            put_error(f"Failed to start VM {vm_name}. Error: {response.text}")
 
         time.sleep(5)
 
-        # Step 4: Create User in Authentik
+        # Step 5: Create User in Authentik
         current_step += 1
         put_info(f"Creating Authentik user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
         
@@ -247,24 +262,10 @@ def create_training_seats():
         with put_loading():
             response = requests.post(f"{API_BASE_URL}/v1/authentik/users", json=authentik_user_data)
         if response.status_code != 200:
-            put_error(f"Failed to create Authentik user for {seat['name']}. Error: {response.text}")
+            put_error(f"Failed to create Authentik user for {vm_name}. Error: {response.text}")
             continue
 
         time.sleep(5)
-
-        # Step 5: Add user to group in LDAP
-        #current_step += 1
-        #put_info(f"Adding user {seat['first_name']} {seat['last_name']} to group... ({current_step}/{total_steps})")
-        #add_to_group_data = {
-        #    "userId": lldap_user_data["id"],
-        #    "groupId": selected_group_id
-        #}
-        #with put_loading():
-        #    response = requests.post(f"{API_BASE_URL}/v1/lldap/add-user-to-group", json=add_to_group_data)
-        #if response.status_code != 200:
-        #    put_error(f"Failed to add user {seat['name']} to group. Error: {response.text}")
-
-        #time.sleep(2)
 
         # Step 6: Create User in Guacamole
         current_step += 1
@@ -273,45 +274,44 @@ def create_training_seats():
         with put_loading():
             response = requests.post(f"{API_BASE_URL}/v1/guacamole/users/{guacamole_username}")
         if response.status_code != 200:
-            put_error(f"Failed to create Guacamole user for {seat['name']}. Error: {response.text}")
+            put_error(f"Failed to create Guacamole user for {vm_name}. Error: {response.text}")
 
         time.sleep(2)
 
         # Step 7: Find Proxmox Seat IP
         current_step += 1
-        put_info(f"Finding Proxmox IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
+        put_info(f"Finding Proxmox IP for seat {vm_name}, but let's wait a bit.... ({current_step}/{total_steps})")
         with put_loading():
             time.sleep(30)
-            response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip-pve/{seat['name']}")
+            response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip-pve/{vm_name}")
         if response.status_code == 200:
-            seat_ip_proxmox = response.json().get('ip_address')
-            if seat_ip_proxmox:
-                put_success(f"IP address for seat {seat['name']}: {seat_ip_proxmox}")
+            seat_info = response.json()
+            if 'ip_address' in seat_info and isinstance(seat_info['ip_address'], dict):
+                ip_info = seat_info['ip_address']
+                seat_ip_proxmox = ip_info.get('ip_address')
+                node = ip_info.get('node')
+                vmid = ip_info.get('vmid')
+                
+                # Store VM details
+                vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
+                vm_details[vm_name] = {
+                    "ip": seat_ip_proxmox,
+                    "node": node,
+                    "vmid": vmid
+                }
+
+                success_message = f"IP address for seat {vm_name}: {seat_ip_proxmox}"
+                if node and vmid:
+                    success_message += f" (Node: {node}, VMID: {vmid})"
+                put_success(success_message)
             else:
-                put_error(f"Failed to find IP for seat {seat['name']}.")
+                put_error(f"Failed to find IP for seat {vm_name}.")
         else:
-            put_error(f"Failed to find IP for seat {seat['name']}. Error: {response.text}")
+            put_error(f"Failed to find IP for seat {vm_name}. Error: {response.text}")
 
         time.sleep(2)
 
-        # Step 8: Find Guacamole Seat IP
-        #current_step += 1
-        #put_info(f"Finding Guacamole IP for seat {seat['name']}, but let's wait a bit.... ({current_step}/{total_steps})")
-        #with put_loading():
-        #    time.sleep(30)
-        #    response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip/{seat['name']}")
-        #if response.status_code == 200:
-        #    seat_ip = response.json().get('ip_address')
-        #    if seat_ip:
-        #        put_success(f"IP address for seat {seat['name']}: {seat_ip}")
-        #    else:
-        #        put_error(f"Failed to find IP for seat {seat['name']}.")
-        #else:
-        #    put_error(f"Failed to find IP for seat {seat['name']}. Error: {response.text}")
-
-        #time.sleep(2)
-
-        # Step 9: Create connections for Guacamole User
+        # Step 8: Create connections for Guacamole User
         current_step += 1
         put_info(f"Creating connections in Guacamole and adding them to {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
 
@@ -388,28 +388,30 @@ def create_training_seats():
         deployed_users.append(f"{seat['first_name'].lower()}.{seat['last_name'].lower()}")
         proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
         
-        # Step 10: Check if VM needs to be shut down
+        # Step 9: Check if VM needs to be shut down
         current_step += 1
         put_info(f"Checking if VM needs to be shut down... ({current_step}/{total_steps})")
 
         start_date = datetime.strptime(training_dates['start_date'], '%d-%m-%Y').date()
         today = datetime.now().date()
 
+        vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
+
         if start_date > today:
-            put_info(f"Start date {start_date} is in the future. Attempting to shut down VM {seat['name']}...")
+            put_info(f"Start date {start_date} is in the future. Attempting to shut down VM {vm_name}...")
             try:
-                response = requests.post(f"{API_BASE_URL}/v1/pve/shutdown-vm/{seat['name']}")
+                response = requests.post(f"{API_BASE_URL}/v1/pve/shutdown-vm/{vm_name}")
                 response.raise_for_status()
-                put_success(f"Shutdown command sent for VM {seat['name']}.")
+                put_success(f"Shutdown command sent for VM {vm_name}.")
             except requests.RequestException as e:
-                put_error(f"Failed to send shutdown command for VM {seat['name']}. Error: {str(e)}")
+                put_error(f"Failed to send shutdown command for VM {vm_name}. Error: {str(e)}")
         else:
-            put_info(f"Start date {start_date} is today or in the past. Keeping VM {seat['name']} running.")
+            put_info(f"Start date {start_date} is today or in the past. Keeping VM {vm_name} running.")
 
     put_success("Training seats creation process completed!")
 
-    # Step 11: Send deployment summary email
-    send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords)
+    # Send deployment summary email
+    send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details)
 
 if __name__ == "__main__":
     create_training_seats()

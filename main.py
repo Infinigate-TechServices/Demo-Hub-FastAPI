@@ -30,6 +30,17 @@ def list_seats():
     return cf.list_seats()
 
 # PVE endpoints
+@app.get("/api/v1/pve/evaluate-nodes")
+async def get_best_node():
+    try:
+        best_node = pve.evaluate_nodes()
+        if best_node:
+            return {"best_node": best_node}
+        else:
+            raise HTTPException(status_code=404, detail="No suitable node found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
 @app.post("/api/v1/pve/create-training-seat")
 def create_training_seat(vm: VM):
     return pve.create_training_seat(vm.name, vm.template_id)
@@ -87,7 +98,6 @@ def create_vm_from_template(vm: LinkedClone):
 @app.post("/api/v1/pve/start-vm/{vm_name}")
 def start_vm(vm_name: str):
     result = pve.start_vm(vm_name)
-    print(result)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
