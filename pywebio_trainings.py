@@ -38,28 +38,28 @@ def sanitize_name(name):
     # Replace multiple spaces with a single space
     name = re.sub(r'\s+', ' ', name)
     
-    # Replace umlauts with their two-letter equivalents
-    umlaut_map = {
-        'ä': 'ae', 'ö': 'oe', 'ü': 'ue',
-        'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
-        'ß': 'ss'
-    }
-    for umlaut, replacement in umlaut_map.items():
-        name = name.replace(umlaut, replacement)
-    
-    # Remove any characters that aren't letters, spaces, or hyphens
-    name = re.sub(r'[^a-zA-Z\s-]', '', name)
-    
-    # Replace any remaining diacritical marks
+    # Use unidecode to replace accented characters with their ASCII equivalents
     name = unidecode.unidecode(name)
+    
+    # Remove any characters that aren't letters, numbers, spaces, or hyphens
+    name = re.sub(r'[^a-zA-Z0-9\s-]', '', name)
     
     # Replace spaces with dashes
     name = name.replace(' ', '-')
     
-    # Capitalize each word (now separated by dashes)
-    name = '-'.join(word.capitalize() for word in name.split('-'))
+    # Capitalize each part, except for the last part if it contains numbers
+    parts = name.split('-')
+    for i in range(len(parts) - 1):
+        parts[i] = parts[i].capitalize()
     
-    return name
+    # For the last part, if it contains numbers, capitalize only the letters
+    last_part = parts[-1]
+    if any(char.isdigit() for char in last_part):
+        parts[-1] = ''.join(char.upper() if char.isalpha() else char for char in last_part)
+    else:
+        parts[-1] = last_part.capitalize()
+    
+    return '-'.join(parts)
 
 def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details):
     subject = f"Training Deployment Summary - Ticket {ticket_number}"
