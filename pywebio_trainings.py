@@ -47,19 +47,24 @@ def sanitize_name(name):
     for umlaut, replacement in umlaut_map.items():
         name = name.replace(umlaut, replacement)
     
-    # Remove any characters that aren't letters, spaces, or hyphens
-    name = re.sub(r'[^a-zA-Z\s-]', '', name)
-    
-    # Replace any remaining diacritical marks
+    # Use unidecode to replace any remaining accented characters with their ASCII equivalents
     name = unidecode.unidecode(name)
+    
+    # Remove any characters that aren't letters, numbers, spaces, or hyphens
+    name = re.sub(r'[^a-zA-Z0-9\s-]', '', name)
     
     # Replace spaces with dashes
     name = name.replace(' ', '-')
     
-    # Capitalize each word (now separated by dashes)
-    name = '-'.join(word.capitalize() for word in name.split('-'))
+    # Capitalize each part, except for the last part if it contains numbers
+    parts = name.split('-')
+    for i in range(len(parts)):
+        if i == len(parts) - 1 and any(char.isdigit() for char in parts[i]):
+            parts[i] = ''.join(char.upper() if char.isalpha() else char for char in parts[i])
+        else:
+            parts[i] = parts[i].capitalize()
     
-    return name
+    return '-'.join(parts)
 
 def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details):
     subject = f"Training Deployment Summary - Ticket {ticket_number}"
@@ -82,7 +87,10 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
 
     body += "\nUser Credentials:\n"
     for user, password in user_passwords.items():
-        body += f"- {user}: {password}\n"
+        if password == "user has already been created at an earlier date":
+            body += f"- {user}: {password}\n"
+        else:
+            body += f"- {user}: {password}\n"
 
     msg = MIMEMultipart()
     msg['From'] = SMTP_USERNAME
@@ -98,7 +106,7 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        clear()
+        #clear()
         put_success(f"Deployment summary email for Ticket {ticket_number} sent successfully.\n\nEmail Body:\n{body}")
     except Exception as e:
         put_error(f"Failed to send deployment summary email for Ticket {ticket_number}. Error: {str(e)}")
@@ -245,25 +253,38 @@ def create_training_seats():
 
         time.sleep(5)
 
-        # Step 5: Create User in Authentik
+        # Step 5: Check if user exists in Authentik and create if not
         current_step += 1
-        put_info(f"Creating Authentik user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
-        
-        # Generate a random password
-        password = generate_password()
-        user_passwords[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = password
-        
+        put_info(f"Checking/Creating Authentik user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+
+        username = f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"
+        email = f"{username}@infinigate-labs.com"
+
         authentik_user_data = {
-            "username": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}",
-            "email": f"{seat['first_name'].lower()}.{seat['last_name'].lower()}@infinigate-labs.com",
+            "username": username,
+            "email": email,
             "name": f"{seat['first_name']} {seat['last_name']}",
-            "password": password
+            "password": generate_password()
         }
+
         with put_loading():
-            response = requests.post(f"{API_BASE_URL}/v1/authentik/users", json=authentik_user_data)
-        if response.status_code != 200:
-            put_error(f"Failed to create Authentik user for {vm_name}. Error: {response.text}")
-            continue
+            create_response = requests.post(f"{API_BASE_URL}/v1/authentik/users", json=authentik_user_data)
+
+        response_json = create_response.json()
+
+        #put_info(f"Response status: {create_response.status_code}")
+        #put_info(f"Response content: {create_response.text}")
+
+        if "message" in response_json and "already exists" in response_json["message"]:
+            put_warning(f"User {username} already exists in Authentik. Skipping creation.")
+            user_passwords[username] = "user has already been created at an earlier date"
+        elif create_response.status_code == 200:
+            put_success(f"Authentik user {username} created successfully.")
+            user_passwords[username] = authentik_user_data["password"]
+        else:
+            error_message = response_json.get("message", create_response.text)
+            put_error(f"Failed to create Authentik user for {username}. Error: {error_message}")
+            user_passwords[username] = "Failed to create user"
 
         time.sleep(5)
 
@@ -271,45 +292,51 @@ def create_training_seats():
         current_step += 1
         put_info(f"Creating Guacamole user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
         guacamole_username = f"{seat['first_name'].lower()}.{seat['last_name'].lower()}@infinigate-labs.com"
-        with put_loading():
-            response = requests.post(f"{API_BASE_URL}/v1/guacamole/users/{guacamole_username}")
-        if response.status_code != 200:
-            put_error(f"Failed to create Guacamole user for {vm_name}. Error: {response.text}")
+        try:
+            with put_loading():
+                response = requests.post(f"{API_BASE_URL}/v1/guacamole/users/{guacamole_username}")
+            if response.status_code != 200:
+                put_error(f"Failed to create Guacamole user for {vm_name}. Error: {response.text}")
+            else:
+                put_success(f"Guacamole user created for {guacamole_username}")
+        except Exception as e:
+            put_error(f"An error occurred during Guacamole user creation: {str(e)}")
 
         time.sleep(2)
 
         # Step 7: Find Proxmox Seat IP
         current_step += 1
         put_info(f"Finding Proxmox IP for seat {vm_name}, but let's wait a bit.... ({current_step}/{total_steps})")
-        with put_loading():
-            time.sleep(30)
-            response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip-pve/{vm_name}")
-        if response.status_code == 200:
-            seat_info = response.json()
-            if 'ip_address' in seat_info and isinstance(seat_info['ip_address'], dict):
-                ip_info = seat_info['ip_address']
-                seat_ip_proxmox = ip_info.get('ip_address')
-                node = ip_info.get('node')
-                vmid = ip_info.get('vmid')
-                
-                # Store VM details
-                vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
-                vm_details[vm_name] = {
-                    "ip": seat_ip_proxmox,
-                    "node": node,
-                    "vmid": vmid
-                }
+        try:
+            with put_loading():
+                time.sleep(30)
+                response = requests.get(f"{API_BASE_URL}/v1/pve/find-seat-ip-pve/{vm_name}")
+            if response.status_code == 200:
+                seat_info = response.json()
+                if 'ip_address' in seat_info and isinstance(seat_info['ip_address'], dict):
+                    ip_info = seat_info['ip_address']
+                    seat_ip_proxmox = ip_info.get('ip_address')
+                    node = ip_info.get('node')
+                    vmid = ip_info.get('vmid')
+                    
+                    # Store VM details
+                    vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
+                    vm_details[vm_name] = {
+                        "ip": seat_ip_proxmox,
+                        "node": node,
+                        "vmid": vmid
+                    }
 
-                success_message = f"IP address for seat {vm_name}: {seat_ip_proxmox}"
-                if node and vmid:
-                    success_message += f" (Node: {node}, VMID: {vmid})"
-                put_success(success_message)
+                    success_message = f"IP address for seat {vm_name}: {seat_ip_proxmox}"
+                    if node and vmid:
+                        success_message += f" (Node: {node}, VMID: {vmid})"
+                    put_success(success_message)
+                else:
+                    put_error(f"Failed to find IP for seat {vm_name}.")
             else:
-                put_error(f"Failed to find IP for seat {vm_name}.")
-        else:
-            put_error(f"Failed to find IP for seat {vm_name}. Error: {response.text}")
-
-        time.sleep(2)
+                put_error(f"Failed to find IP for seat {vm_name}. Error: {response.text}")
+        except Exception as e:
+            put_error(f"An error occurred while finding Proxmox IP: {str(e)}")
 
         # Step 8: Create connections for Guacamole User
         current_step += 1

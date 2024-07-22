@@ -103,3 +103,20 @@ def list_groups():
         return response.json()['results']
     else:
         raise HTTPException(status_code=response.status_code, detail=f"Failed to list groups: {response.text}")
+    
+def user_exists(username: str) -> bool:
+    url = f"{AUTHENTIK_URL}/api/v3/core/users/"
+    params = {"username": username}
+    response = requests.get(url, headers=get_headers(), params=params)
+
+    if response.status_code == 200:
+        users = response.json()
+        return users['pagination']['count'] > 0
+    else:
+        raise HTTPException(status_code=response.status_code, detail=f"Failed to check user existence: {response.text}")
+
+def create_user_if_not_exists(username: str, email: str, name: str, password: str):
+    if user_exists(username):
+        return {"message": f"User '{username}' already exists"}
+    else:
+        return create_user_in_authentik(username, email, name, password)
