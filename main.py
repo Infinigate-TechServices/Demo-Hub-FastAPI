@@ -288,8 +288,14 @@ async def add_user_to_group(input: AddUserToGroupInput):
 @app.post("/api/v1/authentik/users")
 async def create_authentik_user(user: CreateAuthentikUserInput):
     try:
-        new_user = authentik.create_user_in_authentik(user.username, user.email, user.name, user.password)
-        return {"message": "User created successfully in Authentik with password set", "user": new_user}
+        result = authentik.create_user_if_not_exists(user.username, user.email, user.name, user.password)
+        
+        if "message" in result and "already exists" in result["message"]:
+            # User already exists
+            return {"message": result["message"]}
+        else:
+            # New user created
+            return {"message": "User created successfully in Authentik with password set", "user": result}
     except HTTPException as e:
         raise e
     except Exception as e:
