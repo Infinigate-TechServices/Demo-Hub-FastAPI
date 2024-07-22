@@ -9,6 +9,7 @@ import threading
 import json
 import logging
 from datetime import datetime, timedelta
+import schedule
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -133,23 +134,27 @@ def run_check_now():
     check_and_manage_vms()
 
 def run_background_check():
-    logger.info("Starting background VM check process")
+    logger.info("Running background VM check process")
+    try:
+        check_and_manage_vms()
+        logger.info("Completed VM check and management process")
+    except Exception as e:
+        logger.error(f"Error in VM check and management process: {e}")
+
+def schedule_daily_check():
+    schedule.every().day.at("03:00").do(run_background_check)
+    logger.info("Daily VM check scheduled for 3:00 AM")
+
     while True:
-        try:
-            check_and_manage_vms()
-            logger.info("Completed VM check and management process")
-        except Exception as e:
-            logger.error(f"Error in VM check and management process: {e}")
-        
-        # Sleep for 5 minutes before the next check
-        time.sleep(300)  # 300 seconds = 5 minutes
+        schedule.run_pending()
+        time.sleep(60)  # Sleep for 1 minute
 
 def start_background_check():
-    logger.info("Starting background check thread")
-    background_check_thread = threading.Thread(target=run_background_check)
+    logger.info("Starting background check scheduler")
+    background_check_thread = threading.Thread(target=schedule_daily_check)
     background_check_thread.daemon = True
     background_check_thread.start()
-    logger.info("Background VM check thread started")
+    logger.info("Background VM check scheduler started")
 
 def evaluate_nodes():
     best_node = None
