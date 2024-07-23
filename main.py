@@ -10,6 +10,7 @@ from nginx_proxy_manager import list_proxy_hosts, create_proxy_host, remove_prox
 from pywebio_app import pywebio_main
 import logging
 import traceback
+from datetime import datetime
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,22 @@ async def get_best_node():
             return {"best_node": best_node}
         else:
             raise HTTPException(status_code=404, detail="No suitable node found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    
+@app.get("/api/v1/pve/evaluate-nodes-for-date/{target_date}")
+async def get_best_node_for_date(target_date: str):
+    try:
+        # Validate the date format
+        datetime.strptime(target_date, "%d-%m-%Y")
+        
+        best_node = pve.evaluate_nodes_for_date(target_date)
+        if best_node:
+            return {"best_node": best_node, "target_date": target_date}
+        else:
+            raise HTTPException(status_code=404, detail="No suitable node found for the given date")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Please use DD-MM-YYYY")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 

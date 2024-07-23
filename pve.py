@@ -10,6 +10,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 import schedule
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -169,6 +170,39 @@ def evaluate_nodes():
         if free_memory > max_memory and free_disk > max_disk:
             max_memory = free_memory
             max_disk = free_disk
+            best_node = node
+
+    return best_node
+
+def evaluate_nodes_for_date(target_date):
+    target_date = datetime.strptime(target_date, "%d-%m-%Y").date()
+    best_node = None
+    min_expected_load = float('inf')
+
+    for node in proxmox_nodes:
+        expected_memory_usage = 0
+        total_memory = proxmox.nodes(node).status.get()['memory']['total']
+        
+        vms = proxmox.nodes(node).qemu.get()
+        for vm in vms:
+            vm_config = proxmox.nodes(node).qemu(vm['vmid']).config.get()
+            vm_memory = int(vm_config.get('memory', 0))
+            
+            if 'tags' in vm and vm['tags']:
+                tags = vm['tags'].split(';')
+                for tag in tags:
+                    if tag.startswith('start-'):
+                        start_date_str = tag[6:]
+                        try:
+                            start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
+                            if start_date <= target_date:
+                                expected_memory_usage += vm_memory
+                        except ValueError:
+                            logger.warning(f"Invalid date format in tag for VM {vm['name']}: {tag}")
+        
+        expected_load = expected_memory_usage / total_memory
+        if expected_load < min_expected_load:
+            min_expected_load = expected_load
             best_node = node
 
     return best_node
