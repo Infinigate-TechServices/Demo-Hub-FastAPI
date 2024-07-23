@@ -1,16 +1,17 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput
+from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput
 import cf
 import pve
 import guacamole
 import lldap
 import authentik
-from nginx_proxy_manager import list_proxy_hosts, create_proxy_host, remove_proxy_host
+import nginx_proxy_manager
 from pywebio_app import pywebio_main
 import logging
 import traceback
 from datetime import datetime
+import requests
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -142,16 +143,38 @@ async def remove_all_scheduled_vms():
 
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
-def create_proxy(proxy_host: ProxyHost):
-    return create_proxy_host(proxy_host)
-
-@app.delete("/api/v1/nginx/remove-proxy-host/{proxy_host_id}")
-def delete_proxy(proxy_host_id: int):
-    return remove_proxy_host(proxy_host_id)
+def create_proxy(proxy_host: ProxyHostCreate):
+    try:
+        result = nginx_proxy_manager.create_proxy_host(proxy_host.dict())
+        return {"message": "Proxy host created successfully", "proxy_host_id": result["id"]}
+    except requests.HTTPError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create proxy host: {str(e)}")
 
 @app.get("/api/v1/nginx/list-proxy-hosts")
 def get_proxy_hosts():
-    return list_proxy_hosts()
+    try:
+        proxy_hosts = nginx_proxy_manager.list_proxy_hosts()
+        return {"proxy_hosts": proxy_hosts}
+    except requests.HTTPError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list proxy hosts: {str(e)}")
+
+@app.get("/api/v1/nginx/list-certificates")
+def get_certificates():
+    logger.debug("Received request to list certificates")
+    try:
+        certificates = nginx_proxy_manager.list_certificates()
+        logger.info(f"Successfully retrieved {len(certificates)} certificates")
+        return {"certificates": certificates}
+    except requests.HTTPError as e:
+        logger.error(f"HTTP error occurred: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list certificates: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list certificates: {str(e)}")
 
 # Guacamole endpoints
 @app.post("/api/v1/guacamole/users/{username}")

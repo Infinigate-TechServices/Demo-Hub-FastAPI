@@ -188,8 +188,6 @@ def evaluate_nodes_for_date(target_date):
         
         for vm in vms:
             vm_config = proxmox.nodes(node).qemu(vm['vmid']).config.get()
-            
-            # Get the maximum memory allocation (accounting for ballooning)
             max_memory = int(vm_config.get('memory', 0))
             if 'balloon' in vm_config:
                 max_memory = max(max_memory, int(vm_config['balloon']))
@@ -203,7 +201,7 @@ def evaluate_nodes_for_date(target_date):
                             start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
                             if start_date <= target_date:
                                 expected_memory_usage += max_memory
-                                break  # Count this VM only once
+                                break
                         except ValueError:
                             logger.warning(f"Invalid date format in tag for VM {vm['name']}: {tag}")
         

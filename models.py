@@ -12,6 +12,27 @@ class TrainingSeat(BaseModel):
 class VM(BaseModel):
     name: str
     template_id: Optional[int] = None
+    
+# Nginx Proxy Manager Models
+
+class ProxyHostCreate(BaseModel):
+    domain_names: List[str]
+    forward_scheme: str
+    forward_host: str
+    forward_port: int
+    access_list_id: int = 0
+    certificate_id: int
+    ssl_forced: int = 1
+    caching_enabled: int = 0
+    block_exploits: int = 1
+    advanced_config: str = ""
+    allow_websocket_upgrade: int = 1
+    http2_support: int = 1
+    hsts_enabled: int = 0
+    hsts_subdomains: int = 0
+    enabled: int = 1
+    locations: List[dict] = []
+    meta: Optional[dict] = None
 
 class ProxyHost(BaseModel):
     domain_names: List[str]
