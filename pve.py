@@ -177,16 +177,22 @@ def evaluate_nodes():
 def evaluate_nodes_for_date(target_date):
     target_date = datetime.strptime(target_date, "%d-%m-%Y").date()
     best_node = None
-    min_expected_load = float('inf')
+    min_expected_load_ratio = float('inf')
 
     for node in proxmox_nodes:
-        expected_memory_usage = 0
-        total_memory = proxmox.nodes(node).status.get()['memory']['total']
+        node_status = proxmox.nodes(node).status.get()
+        total_memory = node_status['memory']['total']
         
+        expected_memory_usage = 0
         vms = proxmox.nodes(node).qemu.get()
+        
         for vm in vms:
             vm_config = proxmox.nodes(node).qemu(vm['vmid']).config.get()
-            vm_memory = int(vm_config.get('memory', 0))
+            
+            # Get the maximum memory allocation (accounting for ballooning)
+            max_memory = int(vm_config.get('memory', 0))
+            if 'balloon' in vm_config:
+                max_memory = max(max_memory, int(vm_config['balloon']))
             
             if 'tags' in vm and vm['tags']:
                 tags = vm['tags'].split(';')
@@ -196,14 +202,27 @@ def evaluate_nodes_for_date(target_date):
                         try:
                             start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
                             if start_date <= target_date:
-                                expected_memory_usage += vm_memory
+                                expected_memory_usage += max_memory
+                                break  # Count this VM only once
                         except ValueError:
                             logger.warning(f"Invalid date format in tag for VM {vm['name']}: {tag}")
         
-        expected_load = expected_memory_usage / total_memory
-        if expected_load < min_expected_load:
-            min_expected_load = expected_load
+        # Calculate the expected load ratio
+        expected_load_ratio = expected_memory_usage / total_memory
+        
+        logger.info(f"Node {node}: Expected memory usage: {expected_memory_usage / (1024*1024):.2f} GB, "
+                    f"Total memory: {total_memory / (1024*1024):.2f} GB, "
+                    f"Expected load ratio: {expected_load_ratio:.2f}")
+        
+        if expected_load_ratio < min_expected_load_ratio:
+            min_expected_load_ratio = expected_load_ratio
             best_node = node
+
+    if best_node:
+        logger.info(f"Selected best node for {target_date}: {best_node} "
+                    f"with expected load ratio: {min_expected_load_ratio:.2f}")
+    else:
+        logger.warning(f"No suitable node found for date {target_date}")
 
     return best_node
 
@@ -224,13 +243,12 @@ def remove_training_seat(seat: TrainingSeat):
                 return proxmox.nodes(node).qemu(vmid).delete()
     return {"error": "VM not found"}
 
-def create_linked_clone(name: str, template_id: int):
-    best_node = evaluate_nodes()
-    if not best_node:
-        return {"error": "No suitable node found"}
+def create_linked_clone(name: str, template_id: int, node: str):
+    if not node:
+        return {"error": "No node specified"}
     
     vmid = proxmox.cluster.nextid.get()
-    return proxmox.nodes(best_node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=0)
+    return proxmox.nodes(node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=0)
 
 def remove_all_scheduled_vms():
     logger.info("Starting immediate removal of all VMs scheduled for deletion")

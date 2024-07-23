@@ -110,7 +110,7 @@ async def add_tags_to_vm_endpoint(request: AddTagsRequest):
 
 @app.post("/api/v1/pve/create-linked-clone")
 def create_vm_from_template(vm: LinkedClone):
-    return pve.create_linked_clone(vm.name, vm.template_id)
+    return pve.create_linked_clone(vm.name, vm.template_id, vm.node)
 
 @app.post("/api/v1/pve/start-vm/{vm_name}")
 def start_vm(vm_name: str):

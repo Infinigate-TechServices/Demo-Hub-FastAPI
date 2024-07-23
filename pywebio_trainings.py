@@ -186,21 +186,21 @@ def create_training_seats():
     vm_details = {}
 
     for idx, seat in enumerate(seats):
-        # Step 1: Get the best available node
+        # Step 1: Find best node for selected date
         current_step += 1
-        put_info(f"Finding the best available node for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+        put_info(f"Finding the best available node for {seat['first_name']} {seat['last_name']} on {training_dates['start_date']}... ({current_step}/{total_steps})")
         with put_loading():
-            response = requests.get(f"{API_BASE_URL}/v1/pve/evaluate-nodes")
+            response = requests.get(f"{API_BASE_URL}/v1/pve/evaluate-nodes-for-date/{training_dates['start_date']}")
         if response.status_code != 200:
             put_error(f"Failed to get the best available node. Error: {response.text}")
             continue
 
         best_node = response.json().get('best_node')
         if not best_node:
-            put_error("No suitable node found.")
+            put_error("No suitable node found for the given date.")
             continue
 
-        put_success(f"Best node selected: {best_node}")
+        put_success(f"Best node selected for {training_dates['start_date']}: {best_node}")
 
         # Get the template ID for the best node
         template_id = selected_template["template_ids"].get(best_node)

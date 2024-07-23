@@ -52,6 +52,7 @@ class AddTagsRequest(BaseModel):
 class LinkedClone(BaseModel):
     name: str
     template_id: int
+    node: str
     
 class AddUserToGroupInput(BaseModel):
     userId: str
