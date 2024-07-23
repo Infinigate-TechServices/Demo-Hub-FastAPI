@@ -66,10 +66,19 @@ def sanitize_name(name):
     
     return '-'.join(parts)
 
-def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details):
+def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details, training_dates, student_info, selected_training):
     subject = f"Training Deployment Summary - Ticket {ticket_number}"
     
     body = "Deployment summary:\n\n"
+    body += f"Training: {selected_training}\n"
+    body += f"Training Start Date: {training_dates['start_date']}\n"
+    body += f"Training End Date: {training_dates['end_date']}\n\n"
+    
+    body += "Student Information:\n"
+    for student in student_info:
+        body += f"- {student['first_name']} {student['last_name']}\n"
+    body += "\n"
+    
     body += "Deployed users:\n"
     for user in deployed_users:
         body += f"- {user}\n"
@@ -174,6 +183,14 @@ def create_training_seats():
         else:
             put_warning(f"Skipping invalid name: {student}")
 
+    student_info = [
+    {
+        "first_name": seat['first_name'],
+        "last_name": seat['last_name']
+    }
+    for seat in seats
+    ]
+    
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
 
@@ -437,8 +454,16 @@ def create_training_seats():
 
     put_success("Training seats creation process completed!")
 
-    # Send deployment summary email
-    send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details)
+    send_deployment_email(
+    ticket_number,
+    deployed_users,
+    proxmox_uris,
+    user_passwords,
+    vm_details,
+    training_dates,
+    student_info,
+    selected_training
+    )
 
 if __name__ == "__main__":
     create_training_seats()
