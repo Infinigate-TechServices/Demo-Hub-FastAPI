@@ -141,6 +141,18 @@ async def remove_all_scheduled_vms():
     result = pve.remove_all_scheduled_vms()
     return result
 
+@app.get("/api/v1/pve/get-vm-mac-address/{vm_name}")
+async def get_vm_mac_address_endpoint(vm_name: str):
+    try:
+        mac_address = pve.get_vm_mac_address(vm_name)
+        if mac_address:
+            return {"vm_name": vm_name, "mac_address": mac_address}
+        else:
+            raise HTTPException(status_code=404, detail=f"MAC address not found for VM: {vm_name}")
+    except Exception as e:
+        logger.error(f"Error getting MAC address for VM {vm_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get MAC address: {str(e)}")
+
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
 def create_proxy(proxy_host: ProxyHostCreate):

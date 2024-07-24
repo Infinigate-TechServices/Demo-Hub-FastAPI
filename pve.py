@@ -468,6 +468,28 @@ def shutdown_vm(vm_name: str):
         logger.error(f"Error shutting down VM '{vm_name}' (ID: {vmid}) on node {node}: {str(e)}")
         return {"error": f"Failed to shut down VM '{vm_name}'. Error: {str(e)}"}
 
+def get_vm_mac_address(vm_name):
+    vmid, node = get_vm_id_and_node(vm_name)
+    if vmid is None or node is None:
+        logger.warning(f"Cannot get MAC address: VM '{vm_name}' not found")
+        return None
+
+    try:
+        vm_config = proxmox.nodes(node).qemu(vmid).config.get()
+        # Assuming the first network interface is the one we want
+        net0 = vm_config.get('net0')
+        if net0:
+            # Extract MAC address from the net0 string
+            mac = net0.split(',')[0].split('=')[1]
+            logger.info(f"MAC address for VM '{vm_name}' (ID: {vmid}) on node {node}: {mac}")
+            return mac
+        else:
+            logger.warning(f"No network interface found for VM '{vm_name}' (ID: {vmid}) on node {node}")
+            return None
+    except Exception as e:
+        logger.error(f"Error getting MAC address for VM '{vm_name}' (ID: {vmid}) on node {node}: {str(e)}")
+        return None
+
 # Initialize global variables
 vms_scheduled_for_deletion = {}
 deletion_lock = threading.Lock()
