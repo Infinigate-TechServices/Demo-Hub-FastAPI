@@ -104,3 +104,14 @@ class CreateAuthentikUserInput(BaseModel):
 class AddAuthentikUserToGroupInput(BaseModel):
     user_id: int
     group_id: int
+    
+    
+# FortiGate models
+class DHCPReservationRequest(BaseModel):
+    mac: str
+    seat: str
+    dhcp_server_id: int
+
+class DHCPRemovalRequest(BaseModel):
+    seat_macs: List[str]
+    dhcp_server_id: int

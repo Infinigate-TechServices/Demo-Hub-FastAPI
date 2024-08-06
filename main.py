@@ -1,12 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput
+from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput, DHCPRemovalRequest, DHCPReservationRequest
 import cf
 import pve
 import guacamole
 import lldap
 import authentik
 import nginx_proxy_manager
+import fortigate
 from pywebio_app import pywebio_main
 import logging
 import traceback
@@ -413,6 +414,53 @@ async def list_authentik_groups():
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# FortiGate endpoints
+@app.post("/api/v1/fortigate/add-dhcp-reservation")
+async def add_dhcp_reservation(request: DHCPReservationRequest):
+    try:
+        assigned_ip = fortigate.add_dhcp_reservation(request.mac, request.seat, request.dhcp_server_id)
+        if assigned_ip:
+            return {"message": "DHCP reservation added successfully", "assigned_ip": assigned_ip, "mac": request.mac, "seat": request.seat, "dhcp_server_id": request.dhcp_server_id}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to add DHCP reservation")
+    except Exception as e:
+        logger.error(f"Error adding DHCP reservation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add DHCP reservation: {str(e)}")
+
+@app.post("/api/v1/fortigate/remove-dhcp-reservations")
+async def remove_dhcp_reservations(request: DHCPRemovalRequest):
+    try:
+        removed_count = fortigate.remove_dhcp_reservations(request.seat_macs, request.dhcp_server_id)
+        return {"message": f"Removed {removed_count} DHCP reservations", "seat_macs": request.seat_macs, "dhcp_server_id": request.dhcp_server_id}
+    except Exception as e:
+        logger.error(f"Error removing DHCP reservations: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove DHCP reservations: {str(e)}")
+
+@app.get("/api/v1/fortigate/validate-dhcp/{seat}/{dhcp_server_id}")
+async def validate_dhcp_reservation(seat: str, dhcp_server_id: int):
+    try:
+        assigned_ip = fortigate.validate_dhcp_by_name(seat, dhcp_server_id)
+        if assigned_ip:
+            return {"seat": seat, "assigned_ip": assigned_ip, "dhcp_server_id": dhcp_server_id}
+        else:
+            raise HTTPException(status_code=404, detail=f"No DHCP reservation found for seat: {seat}")
+    except Exception as e:
+        logger.error(f"Error validating DHCP reservation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate DHCP reservation: {str(e)}")
+
+# New endpoint for testing purposes
+@app.get("/api/v1/fortigate/get-dhcp-server-config/{dhcp_server_id}")
+async def get_dhcp_server_config(dhcp_server_id: int):
+    try:
+        config = fortigate.get_dhcp_server_config(dhcp_server_id)
+        if config:
+            return {"dhcp_server_id": dhcp_server_id, "config": config}
+        else:
+            raise HTTPException(status_code=404, detail=f"No DHCP server configuration found for ID: {dhcp_server_id}")
+    except Exception as e:
+        logger.error(f"Error getting DHCP server configuration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get DHCP server configuration: {str(e)}")
 
 # Mounting PyWebIO app
 app.mount("/", asgi_app(pywebio_main), name="pywebio")

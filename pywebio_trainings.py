@@ -13,11 +13,17 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import secrets
 import string
+import traceback
+import logging
 
 # Load environment variables
 load_dotenv()
 
 API_BASE_URL = "http://localhost:8081/api"
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def generate_password(length=8):
     alphabet = string.ascii_letters + string.digits
@@ -142,6 +148,11 @@ def create_training_seats():
     if not selected_template:
         put_error(f"No template found for training: {selected_training}")
         return
+    
+    dhcp_server_id = selected_template.get("dhcp_server_id")
+    if not dhcp_server_id:
+        put_error(f"No DHCP server ID found for training: {selected_training}")
+        return
 
     # Request ticket number
     ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
@@ -194,7 +205,7 @@ def create_training_seats():
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
 
-    total_steps = len(seats) * 9  # Adjust the number of steps if needed
+    total_steps = len(seats) * 11  # Adjust the number of steps if needed
     
     current_step = 0
     deployed_users = []
@@ -451,6 +462,72 @@ def create_training_seats():
                 put_error(f"Failed to send shutdown command for VM {vm_name}. Error: {str(e)}")
         else:
             put_info(f"Start date {start_date} is today or in the past. Keeping VM {vm_name} running.")
+            
+        # Step 10: Get VM MAC address
+        current_step += 1
+        put_info(f"Getting MAC address for VM {vm_name}... ({current_step}/{total_steps})")
+        try:
+            with put_loading():
+                response = requests.get(f"{API_BASE_URL}/v1/pve/get-vm-mac-address/{vm_name}")
+            if response.status_code == 200:
+                mac_address = response.json()['mac_address']
+                vm_details[vm_name]['mac_address'] = mac_address
+                put_success(f"MAC address for VM {vm_name}: {mac_address}")
+            else:
+                put_error(f"Failed to get MAC address for VM {vm_name}. Error: {response.text}")
+        except Exception as e:
+            put_error(f"An error occurred while getting MAC address: {str(e)}")
+            
+        # Step 11: Create DHCP reservation
+        current_step += 1
+        put_info(f"Creating DHCP reservation for VM {vm_name}... ({current_step}/{total_steps})")
+        try:
+            with put_loading():
+                mac_address = vm_details[vm_name]['mac_address']
+                seat_name = f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"
+                
+                # Make a request to the FastAPI endpoint to create DHCP reservation
+                response = requests.post(f"{API_BASE_URL}/api/v1/fortigate/add-dhcp-reservation", 
+                    json={
+                        "mac": mac_address,
+                        "seat": seat_name,
+                        "dhcp_server_id": dhcp_server_id
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    assigned_ip = result["assigned_ip"]
+                    vm_details[vm_name]['dhcp_ip'] = assigned_ip
+                    put_success(f"DHCP reservation created for VM {vm_name}: {assigned_ip}")
+                else:
+                    error_detail = response.json().get("detail", "Unknown error")
+                    put_error(f"Failed to create DHCP reservation for VM {vm_name}. Error: {error_detail}")
+        except Exception as e:
+            put_error(f"An error occurred while creating DHCP reservation: {str(e)}")
+            logger.error(f"Error creating DHCP reservation for VM {vm_name}: {str(e)}")
+            logger.error(traceback.format_exc())
+
+        # Add a small delay to allow for DHCP reservation to propagate
+        time.sleep(2)
+
+        # Validate the DHCP reservation
+        try:
+            with put_loading():
+                validate_response = requests.get(f"{API_BASE_URL}/api/v1/fortigate/validate-dhcp/{seat_name}/{dhcp_server_id}")
+                
+                if validate_response.status_code == 200:
+                    validated_ip = validate_response.json()["assigned_ip"]
+                    if validated_ip == assigned_ip:
+                        put_success(f"DHCP reservation for VM {vm_name} validated successfully: {validated_ip}")
+                    else:
+                        put_warning(f"DHCP reservation for VM {vm_name} has a mismatch. Assigned: {assigned_ip}, Validated: {validated_ip}")
+                else:
+                    put_warning(f"Failed to validate DHCP reservation for VM {vm_name}")
+        except Exception as e:
+            put_error(f"An error occurred while validating DHCP reservation: {str(e)}")
+            logger.error(f"Error validating DHCP reservation for VM {vm_name}: {str(e)}")
+            logger.error(traceback.format_exc())
 
     put_success("Training seats creation process completed!")
 
