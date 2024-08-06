@@ -115,3 +115,9 @@ class DHCPReservationRequest(BaseModel):
 class DHCPRemovalRequest(BaseModel):
     seat_macs: List[str]
     dhcp_server_id: int
+    
+class DHCPReservationKnownIPRequest(BaseModel):
+    mac: str
+    seat: str
+    ip: str
+    dhcp_server_id: int

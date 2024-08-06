@@ -144,3 +144,57 @@ def validate_dhcp_by_name(seat, dhcp_server_id):
 
     logger.warning(f"No DHCP reservation found for seat: {seat}")
     return None
+
+def add_dhcp_reservation_known_ip(mac, seat, ip, dhcp_server_id):
+    logger.info(f"Adding DHCP reservation for MAC: {mac}, Seat: {seat}, IP: {ip}, DHCP Server ID: {dhcp_server_id}")
+    
+    # Get current DHCP server configuration
+    dhcp_config = get_dhcp_server_config(dhcp_server_id)
+    if not dhcp_config:
+        return None
+
+    # Extract IP range information
+    ip_ranges = dhcp_config.get('ip-range', [])
+    if not ip_ranges:
+        logger.error("No IP ranges found in DHCP server configuration")
+        return None
+
+    # Check if the given IP is within the DHCP range
+    start_ip = ip_ranges[0].get('start-ip')
+    end_ip = ip_ranges[0].get('end-ip')
+    if not ip_in_range(ip, start_ip, end_ip):
+        logger.error(f"Given IP {ip} is not within the DHCP range ({start_ip} - {end_ip})")
+        return None
+
+    # Check if the IP is already reserved
+    reserved_addresses = dhcp_config.get('reserved-address', [])
+    if any(addr['ip'] == ip for addr in reserved_addresses):
+        logger.error(f"IP {ip} is already reserved")
+        return None
+
+    # Prepare the new reservation
+    new_lease = {
+        "ip": ip,
+        "mac": mac,
+        "action": "reserved",
+        "description": seat
+    }
+    reserved_addresses.append(new_lease)
+
+    # Update DHCP server configuration
+    update_data = {
+        "reserved-address": reserved_addresses
+    }
+
+    url = f"{FGT_ADDR}/api/v2/cmdb/system.dhcp/server/{dhcp_server_id}"
+    response = requests.put(url, headers=headers, params=params, json=update_data, verify=False)
+    
+    if response.status_code == 200:
+        logger.info(f"DHCP reservation added successfully for {seat}: {ip}")
+        return ip
+    else:
+        logger.error(f"Failed to add DHCP reservation. Status code: {response.status_code}")
+        return None
+
+def ip_in_range(ip, start_ip, end_ip):
+    return ip_to_int(start_ip) <= ip_to_int(ip) <= ip_to_int(end_ip)

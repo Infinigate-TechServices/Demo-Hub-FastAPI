@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput, DHCPRemovalRequest, DHCPReservationRequest
+from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput, DHCPRemovalRequest, DHCPReservationRequest, DHCPReservationKnownIPRequest
 import cf
 import pve
 import guacamole
@@ -449,7 +449,6 @@ async def validate_dhcp_reservation(seat: str, dhcp_server_id: int):
         logger.error(f"Error validating DHCP reservation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to validate DHCP reservation: {str(e)}")
 
-# New endpoint for testing purposes
 @app.get("/api/v1/fortigate/get-dhcp-server-config/{dhcp_server_id}")
 async def get_dhcp_server_config(dhcp_server_id: int):
     try:
@@ -461,6 +460,18 @@ async def get_dhcp_server_config(dhcp_server_id: int):
     except Exception as e:
         logger.error(f"Error getting DHCP server configuration: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get DHCP server configuration: {str(e)}")
+    
+@app.post("/api/v1/fortigate/add-dhcp-reservation-known-ip")
+async def add_dhcp_reservation_known_ip_endpoint(request: DHCPReservationKnownIPRequest):
+    try:
+        result = fortigate.add_dhcp_reservation_known_ip(request.mac, request.seat, request.ip, request.dhcp_server_id)
+        if result:
+            return {"message": "DHCP reservation added successfully", "assigned_ip": result, "mac": request.mac, "seat": request.seat, "dhcp_server_id": request.dhcp_server_id}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to add DHCP reservation")
+    except Exception as e:
+        logger.error(f"Error adding DHCP reservation with known IP: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add DHCP reservation: {str(e)}")
 
 # Mounting PyWebIO app
 app.mount("/", asgi_app(pywebio_main), name="pywebio")

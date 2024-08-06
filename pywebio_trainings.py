@@ -98,7 +98,8 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         body += f"- {vm_name}:\n"
         body += f"  IP: {details['ip']}\n"
         body += f"  Node: {details['node']}\n"
-        body += f"  VMID: {details['vmid']}\n"
+        body += f"  VM ID: {details['vmid']}\n"
+        body += f"  MAC Address: {details.get('mac_address', 'N/A')}\n"
 
     body += "\nUser Credentials:\n"
     for user, password in user_passwords.items():
@@ -352,7 +353,7 @@ def create_training_seats():
                     vm_details[vm_name] = {
                         "ip": seat_ip_proxmox,
                         "node": node,
-                        "vmid": vmid
+                        "vmid": vmid,
                     }
 
                     success_message = f"IP address for seat {vm_name}: {seat_ip_proxmox}"
@@ -483,14 +484,20 @@ def create_training_seats():
         put_info(f"Creating DHCP reservation for VM {vm_name}... ({current_step}/{total_steps})")
         try:
             with put_loading():
-                mac_address = vm_details[vm_name]['mac_address']
+                mac_address = vm_details[vm_name].get('mac_address')
+                if not mac_address:
+                    put_error(f"MAC address not found for VM {vm_name}")
+                    continue  # Skip to the next iteration of the loop
+
                 seat_name = f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"
+                ip_address = vm_details[vm_name]['ip']  # Use the IP address we got from Proxmox
                 
-                # Make a request to the FastAPI endpoint to create DHCP reservation
-                response = requests.post(f"{API_BASE_URL}/api/v1/fortigate/add-dhcp-reservation", 
+                # Make a request to the new FastAPI endpoint to create DHCP reservation with known IP
+                response = requests.post(f"{API_BASE_URL}/v1/fortigate/add-dhcp-reservation-known-ip", 
                     json={
                         "mac": mac_address,
                         "seat": seat_name,
+                        "ip": ip_address,
                         "dhcp_server_id": dhcp_server_id
                     }
                 )
@@ -514,7 +521,7 @@ def create_training_seats():
         # Validate the DHCP reservation
         try:
             with put_loading():
-                validate_response = requests.get(f"{API_BASE_URL}/api/v1/fortigate/validate-dhcp/{seat_name}/{dhcp_server_id}")
+                validate_response = requests.get(f"{API_BASE_URL}/v1/fortigate/validate-dhcp/{seat_name}/{dhcp_server_id}")
                 
                 if validate_response.status_code == 200:
                     validated_ip = validate_response.json()["assigned_ip"]
