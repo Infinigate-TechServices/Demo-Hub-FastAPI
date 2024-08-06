@@ -15,6 +15,7 @@ import secrets
 import string
 import traceback
 import logging
+from urllib.parse import quote
 
 # Load environment variables
 load_dotenv()
@@ -206,7 +207,7 @@ def create_training_seats():
     num_seats = len(seats)
     put_info(f"Number of valid seats to create: {num_seats}")
 
-    total_steps = len(seats) * 11  # Adjust the number of steps if needed
+    total_steps = len(seats) * 12  # Adjust the number of steps if needed
     
     current_step = 0
     deployed_users = []
@@ -535,6 +536,45 @@ def create_training_seats():
             put_error(f"An error occurred while validating DHCP reservation: {str(e)}")
             logger.error(f"Error validating DHCP reservation for VM {vm_name}: {str(e)}")
             logger.error(traceback.format_exc())
+            
+        # Step 12: Create Nginx Reverse Proxy Entry
+        current_step += 1
+        put_info(f"Creating Reverse Proxy Entry for {vm_name}... ({current_step}/{total_steps})")
+        try:
+            domain_name = f"proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
+            proxy_host_data = {
+                "domain_names": [domain_name],
+                "forward_scheme": "https",
+                "forward_host": seat_ip_proxmox,
+                "forward_port": 8006,
+                "access_list_id": 0,
+                "certificate_id": 13,
+                "ssl_forced": 1,
+                "caching_enabled": 0,
+                "block_exploits": 1,
+                "advanced_config": "",
+                "allow_websocket_upgrade": 1,
+                "http2_support": 1,
+                "hsts_enabled": 0,
+                "hsts_subdomains": 0,
+                "enabled": 1,
+                "locations": [],
+                "meta": {}
+            }
+            with put_loading():
+                response = requests.post(f"{API_BASE_URL}/v1/nginx/create-proxy-host", json=proxy_host_data)
+            if response.status_code == 200:
+                result = response.json()
+                proxy_host_id = result.get("proxy_host_id")
+                put_success(f"Reverse Proxy Entry created for {vm_name}. Proxy Host ID: {proxy_host_id}")
+                # Update the proxmox_uris dictionary with the new domain
+                proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://{domain_name}"
+            else:
+                put_error(f"Failed to create Reverse Proxy Entry for {vm_name}. Error: {response.text}")
+        except Exception as e:
+            put_error(f"An error occurred while creating Reverse Proxy Entry: {str(e)}")
+
+        time.sleep(2)
 
     put_success("Training seats creation process completed!")
 
