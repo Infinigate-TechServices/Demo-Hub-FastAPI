@@ -283,9 +283,9 @@ def create_training_seats():
 
         time.sleep(5)
 
-        # Step 5: Check if user exists in Authentik and create if not
+        # Step 5: Check if user exists in Authentik, create if not, and add to "Trainingsteilnehmer" group
         current_step += 1
-        put_info(f"Checking/Creating Authentik user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+        put_info(f"Checking/Creating Authentik user for {seat['first_name']} {seat['last_name']} and adding to group... ({current_step}/{total_steps})")
 
         username = f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"
         email = f"{username}@infinigate-labs.com"
@@ -298,23 +298,47 @@ def create_training_seats():
         }
 
         with put_loading():
+            # Create or check user
             create_response = requests.post(f"{API_BASE_URL}/v1/authentik/users", json=authentik_user_data)
+            response_json = create_response.json()
 
-        response_json = create_response.json()
+            if "message" in response_json and "already exists" in response_json["message"]:
+                put_warning(f"User {username} already exists in Authentik. Skipping creation.")
+                user_passwords[username] = "user has already been created at an earlier date"
+            elif create_response.status_code == 200:
+                put_success(f"Authentik user {username} created successfully.")
+                user_passwords[username] = authentik_user_data["password"]
+            else:
+                error_message = response_json.get("message", create_response.text)
+                put_error(f"Failed to create Authentik user for {username}. Error: {error_message}")
+                user_passwords[username] = "Failed to create user"
+                continue  # Skip to next iteration if user creation failed
 
-        #put_info(f"Response status: {create_response.status_code}")
-        #put_info(f"Response content: {create_response.text}")
+            # Get user ID
+            user_id_response = requests.get(f"{API_BASE_URL}/v1/authentik/users/{username}")
+            if user_id_response.status_code == 200:
+                user_id = user_id_response.json()["user_id"]
+            else:
+                put_error(f"Failed to get user ID for {username}. Error: {user_id_response.text}")
+                continue  # Skip to next iteration if we couldn't get the user ID
 
-        if "message" in response_json and "already exists" in response_json["message"]:
-            put_warning(f"User {username} already exists in Authentik. Skipping creation.")
-            user_passwords[username] = "user has already been created at an earlier date"
-        elif create_response.status_code == 200:
-            put_success(f"Authentik user {username} created successfully.")
-            user_passwords[username] = authentik_user_data["password"]
-        else:
-            error_message = response_json.get("message", create_response.text)
-            put_error(f"Failed to create Authentik user for {username}. Error: {error_message}")
-            user_passwords[username] = "Failed to create user"
+            # Get group ID for "Trainingsteilnehmer"
+            group_id_response = requests.get(f"{API_BASE_URL}/v1/authentik/groups/Trainingsteilnehmer")
+            if group_id_response.status_code == 200:
+                group_id = group_id_response.json()["group_id"]
+            else:
+                put_error(f"Failed to get group ID for Trainingsteilnehmer. Error: {group_id_response.text}")
+                continue  # Skip to next iteration if we couldn't get the group ID
+
+            # Add user to group
+            add_to_group_response = requests.post(f"{API_BASE_URL}/v1/authentik/add-user-to-group", json={
+                "user_id": user_id,
+                "group_id": group_id
+            })
+            if add_to_group_response.status_code == 200:
+                put_success(f"User {username} added to Trainingsteilnehmer group successfully.")
+            else:
+                put_error(f"Failed to add user {username} to Trainingsteilnehmer group. Error: {add_to_group_response.text}")
 
         time.sleep(5)
 
