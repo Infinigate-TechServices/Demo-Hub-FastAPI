@@ -45,8 +45,8 @@ def set_user_password(user_id: int, password: str):
     else:
         raise HTTPException(status_code=response.status_code, detail=f"Failed to set password: {response.text}")
 
-def add_user_to_group(user_id: int, group_id: int):
-    url = f"{AUTHENTIK_URL}/api/v3/core/groups/{group_id}/users/"
+def add_user_to_group(user_id: int, group_id: str):
+    url = f"{AUTHENTIK_URL}/api/v3/core/groups/{group_id}/add_user/"
     payload = {
         "pk": user_id
     }

@@ -103,7 +103,7 @@ class CreateAuthentikUserInput(BaseModel):
 
 class AddAuthentikUserToGroupInput(BaseModel):
     user_id: int
-    group_id: int
+    group_id: str
     
     
 # FortiGate models

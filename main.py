@@ -368,7 +368,9 @@ async def set_authentik_user_password(username: str, password: str):
 @app.post("/api/v1/authentik/add-user-to-group")
 async def add_authentik_user_to_group(input: AddAuthentikUserToGroupInput):
     try:
-        result = authentik.add_user_to_group(input.user_id, input.group_id)
+        # Convert group_id to int if necessary
+        group_id = int(input.group_id) if input.group_id.isdigit() else input.group_id
+        result = authentik.add_user_to_group(input.user_id, group_id)
         return result
     except HTTPException as e:
         raise e
