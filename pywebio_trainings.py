@@ -297,49 +297,62 @@ def create_training_seats():
             "password": generate_password()
         }
 
+        # Create or check user
+        put_text("Creating/Checking Authentik user...")
         with put_loading():
-            # Create or check user
             create_response = requests.post(f"{API_BASE_URL}/v1/authentik/users", json=authentik_user_data)
             response_json = create_response.json()
 
-            if "message" in response_json and "already exists" in response_json["message"]:
-                put_warning(f"User {username} already exists in Authentik. Skipping creation.")
-                user_passwords[username] = "user has already been created at an earlier date"
-            elif create_response.status_code == 200:
-                put_success(f"Authentik user {username} created successfully.")
-                user_passwords[username] = authentik_user_data["password"]
-            else:
-                error_message = response_json.get("message", create_response.text)
-                put_error(f"Failed to create Authentik user for {username}. Error: {error_message}")
-                user_passwords[username] = "Failed to create user"
-                continue  # Skip to next iteration if user creation failed
+        if "message" in response_json and "already exists" in response_json["message"]:
+            put_warning(f"User {username} already exists in Authentik. Skipping creation.")
+            user_passwords[username] = "user has already been created at an earlier date"
+        elif create_response.status_code == 200:
+            put_success(f"Authentik user {username} created successfully.")
+            user_passwords[username] = authentik_user_data["password"]
+        else:
+            error_message = response_json.get("message", create_response.text)
+            put_error(f"Failed to create Authentik user for {username}. Error: {error_message}")
+            user_passwords[username] = "Failed to create user"
+            put_info("Skipping to next user...")
+            continue  # Skip to next iteration if user creation failed
 
-            # Get user ID
+        # Get user ID
+        put_text("Getting user ID...")
+        with put_loading():
             user_id_response = requests.get(f"{API_BASE_URL}/v1/authentik/users/{username}")
-            if user_id_response.status_code == 200:
-                user_id = user_id_response.json()["user_id"]
-            else:
-                put_error(f"Failed to get user ID for {username}. Error: {user_id_response.text}")
-                continue  # Skip to next iteration if we couldn't get the user ID
+        if user_id_response.status_code == 200:
+            user_id = user_id_response.json()["user_id"]
+            put_info(f"User ID retrieved for {username}")
+        else:
+            put_error(f"Failed to get user ID for {username}. Error: {user_id_response.text}")
+            put_info("Skipping to next user...")
+            continue  # Skip to next iteration if we couldn't get the user ID
 
-            # Get group ID for "Trainingsteilnehmer"
+        # Get group ID for "Trainingsteilnehmer"
+        put_text("Getting group ID...")
+        with put_loading():
             group_id_response = requests.get(f"{API_BASE_URL}/v1/authentik/groups/Trainingsteilnehmer")
-            if group_id_response.status_code == 200:
-                group_id = group_id_response.json()["group_id"]
-            else:
-                put_error(f"Failed to get group ID for Trainingsteilnehmer. Error: {group_id_response.text}")
-                continue  # Skip to next iteration if we couldn't get the group ID
+        if group_id_response.status_code == 200:
+            group_id = group_id_response.json()["group_id"]
+            put_info("Group ID retrieved for Trainingsteilnehmer")
+        else:
+            put_error(f"Failed to get group ID for Trainingsteilnehmer. Error: {group_id_response.text}")
+            put_info("Skipping to next user...")
+            continue  # Skip to next iteration if we couldn't get the group ID
 
-            # Add user to group
+        # Add user to group
+        put_text("Adding user to group...")
+        with put_loading():
             add_to_group_response = requests.post(f"{API_BASE_URL}/v1/authentik/add-user-to-group", json={
                 "user_id": user_id,
                 "group_id": group_id
             })
-            if add_to_group_response.status_code == 200:
-                put_success(f"User {username} added to Trainingsteilnehmer group successfully.")
-            else:
-                put_error(f"Failed to add user {username} to Trainingsteilnehmer group. Error: {add_to_group_response.text}")
+        if add_to_group_response.status_code == 200:
+            put_success(f"User {username} added to Trainingsteilnehmer group successfully.")
+        else:
+            put_error(f"Failed to add user {username} to Trainingsteilnehmer group. Error: {add_to_group_response.text}")
 
+        put_info("Waiting 5 seconds before proceeding...")
         time.sleep(5)
 
         # Step 6: Create User in Guacamole
