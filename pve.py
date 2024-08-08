@@ -405,22 +405,20 @@ def add_tags_to_vm(request: AddTagsRequest):
     tags_string = ','.join(request.tags)
     logger.debug(f"Tags string: {tags_string}")
     
-    vmid = get_vm_id(request.vm_name)
-    if vmid is None:
-        raise ValueError(f"VM with name {request.vm_name} not found")
+    vmid, node = get_vm_id_and_node(request.vm_name)
+    if vmid is None or node is None:
+        logger.warning(f"VM with name {request.vm_name} not found")
+        return False
     
-    for node in proxmox.nodes.get():
-        try:
-            logger.debug(f"Updating tags for VM {request.vm_name} (ID: {vmid}) on node {node['node']}")
-            logger.debug(f"Proxmox API call: proxmox.nodes('{node['node']}').qemu({vmid}).config.put(tags='{tags_string}')")
-            proxmox.nodes(node['node']).qemu(vmid).config.put(tags=tags_string)
-            logger.info(f"Tags updated successfully for VM {request.vm_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Error adding tags to VM {request.vm_name}: {str(e)}")
-    
-    logger.warning(f"Failed to add tags to VM {request.vm_name} on any node")
-    return False
+    try:
+        logger.debug(f"Updating tags for VM {request.vm_name} (ID: {vmid}) on node {node}")
+        logger.debug(f"Proxmox API call: proxmox.nodes('{node}').qemu({vmid}).config.put(tags='{tags_string}')")
+        proxmox.nodes(node).qemu(vmid).config.put(tags=tags_string)
+        logger.info(f"Tags updated successfully for VM {request.vm_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Error adding tags to VM {request.vm_name} on node {node}: {str(e)}")
+        return False
     
 def start_vm(vm_name: str):
     logger.info(f"Attempting to start VM: {vm_name}")
