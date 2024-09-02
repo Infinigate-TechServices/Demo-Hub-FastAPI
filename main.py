@@ -289,6 +289,14 @@ async def add_user_to_connection_group_v2(request: AddUserToConnectionGroupReque
         return {"message": f"User {request.username} added to connection group {request.connection_group_id} successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to add user to connection group")
+    
+@app.get("/api/v1/guacamole/list-users")
+async def list_guacamole_users():
+    users = guacamole.list_users()
+    if users is not None:
+        return {"users": users}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to retrieve users from Guacamole")
 
 # LLDAP endpoints
 @app.post("/api/v1/lldap/users")

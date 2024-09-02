@@ -355,19 +355,42 @@ def create_training_seats():
         put_info("Waiting 5 seconds before proceeding...")
         time.sleep(5)
 
-        # Step 6: Create User in Guacamole
+        # Step 6: Check if user exists in Guacamole, create if not
         current_step += 1
-        put_info(f"Creating Guacamole user for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
+        put_info(f"Checking if Guacamole user exists for {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
         guacamole_username = f"{seat['first_name'].lower()}.{seat['last_name'].lower()}@infinigate-labs.com"
+
         try:
             with put_loading():
-                response = requests.post(f"{API_BASE_URL}/v1/guacamole/users/{guacamole_username}")
-            if response.status_code != 200:
-                put_error(f"Failed to create Guacamole user for {vm_name}. Error: {response.text}")
+                logging.debug(f"Attempting to fetch users from: {API_BASE_URL}/v1/guacamole/list-users")
+                response = requests.get(f"{API_BASE_URL}/v1/guacamole/list-users")
+                logging.debug(f"Response status code: {response.status_code}")
+                logging.debug(f"Response content: {response.text[:1000]}...")  # Log first 1000 characters
+
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    users = response_data.get('users', {})
+                    
+                    user_exists = guacamole_username in users
+                    
+                    if user_exists:
+                        put_warning(f"Guacamole user {guacamole_username} already exists. Skipping creation.")
+                    else:
+                        put_info(f"Creating Guacamole user for {guacamole_username}...")
+                        create_response = requests.post(f"{API_BASE_URL}/api/v1/guacamole/users/{guacamole_username}")
+                        if create_response.status_code == 200:
+                            put_success(f"Guacamole user created for {guacamole_username}")
+                        else:
+                            put_error(f"Failed to create Guacamole user for {guacamole_username}. Error: {create_response.text}")
+                except json.JSONDecodeError:
+                    logging.error("Failed to parse JSON response")
+                    put_error("Failed to parse response from Guacamole API")
             else:
-                put_success(f"Guacamole user created for {guacamole_username}")
+                put_error(f"Failed to retrieve Guacamole users. Status code: {response.status_code}, Error: {response.text}")
         except Exception as e:
-            put_error(f"An error occurred during Guacamole user creation: {str(e)}")
+            logging.exception("An error occurred during Guacamole user check/creation")
+            put_error(f"An error occurred during Guacamole user check/creation: {str(e)}")
 
         time.sleep(2)
 
