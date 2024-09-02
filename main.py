@@ -188,6 +188,16 @@ def get_certificates():
     except Exception as e:
         logger.error(f"Failed to list certificates: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to list certificates: {str(e)}")
+    
+@app.delete("/api/v1/nginx/proxy-hosts/{proxy_host_id}")
+def delete_proxy_host(proxy_host_id: int):
+    try:
+        result = nginx_proxy_manager.delete_proxy_host(proxy_host_id)
+        return {"message": f"Proxy host with ID {proxy_host_id} deleted successfully", "result": result}
+    except requests.HTTPError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete proxy host: {str(e)}")
 
 # Guacamole endpoints
 @app.post("/api/v1/guacamole/users/{username}")

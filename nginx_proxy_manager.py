@@ -75,3 +75,23 @@ def list_certificates() -> List[Dict[str, Any]]:
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     return response.json()
+
+def delete_proxy_host(proxy_host_id: int) -> Dict[str, Any]:
+    """
+    Delete a proxy host by its ID.
+    
+    Args:
+        proxy_host_id: The ID of the proxy host to delete.
+    
+    Returns:
+        A dictionary containing the response from the API.
+    """
+    url = f"{NGINX_API_URL}/api/nginx/proxy-hosts/{proxy_host_id}"
+    token = get_auth_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    response = requests.delete(url, headers=headers)
+    response.raise_for_status()
+    return response.json()

@@ -378,7 +378,7 @@ def create_training_seats():
                         put_warning(f"Guacamole user {guacamole_username} already exists. Skipping creation.")
                     else:
                         put_info(f"Creating Guacamole user for {guacamole_username}...")
-                        create_response = requests.post(f"{API_BASE_URL}/api/v1/guacamole/users/{guacamole_username}")
+                        create_response = requests.post(f"{API_BASE_URL}/v1/guacamole/users/{guacamole_username}")
                         if create_response.status_code == 200:
                             put_success(f"Guacamole user created for {guacamole_username}")
                         else:
@@ -597,9 +597,9 @@ def create_training_seats():
             logger.error(f"Error validating DHCP reservation for VM {vm_name}: {str(e)}")
             logger.error(traceback.format_exc())
             
-        # Step 12: Create Nginx Reverse Proxy Entry
+        # Step 12: Create or Update Nginx Reverse Proxy Entry
         current_step += 1
-        put_info(f"Creating Reverse Proxy Entry for {vm_name}... ({current_step}/{total_steps})")
+        put_info(f"Creating or Updating Reverse Proxy Entry for {vm_name}... ({current_step}/{total_steps})")
         try:
             domain_name = f"proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
             proxy_host_data = {
@@ -621,18 +621,41 @@ def create_training_seats():
                 "locations": [],
                 "meta": {}
             }
-            with put_loading():
-                response = requests.post(f"{API_BASE_URL}/v1/nginx/create-proxy-host", json=proxy_host_data)
-            if response.status_code == 200:
-                result = response.json()
-                proxy_host_id = result.get("proxy_host_id")
-                put_success(f"Reverse Proxy Entry created for {vm_name}. Proxy Host ID: {proxy_host_id}")
+
+            # Check for existing proxy host
+            existing_proxy_hosts_response = requests.get(f"{API_BASE_URL}/v1/nginx/list-proxy-hosts")
+            if existing_proxy_hosts_response.status_code == 200:
+                existing_proxy_hosts = existing_proxy_hosts_response.json().get("proxy_hosts", [])
+                existing_proxy_host = next((host for host in existing_proxy_hosts if domain_name in host.get("domain_names", [])), None)
+
+                if existing_proxy_host:
+                    put_warning(f"Existing proxy host found for {domain_name}. Removing...")
+                    proxy_host_id = existing_proxy_host['id']
+                    delete_response = requests.delete(f"{API_BASE_URL}/v1/nginx/proxy-hosts/{proxy_host_id}")
+                    if delete_response.status_code != 200:
+                        put_error(f"Failed to delete existing proxy host. Error: {delete_response.text}")
+                        raise Exception("Failed to delete existing proxy host")
+                    put_success(f"Existing proxy host removed for {domain_name}")
+
+                # Create new proxy host
+                with put_loading():
+                    create_response = requests.post(f"{API_BASE_URL}/v1/nginx/create-proxy-host", json=proxy_host_data)
+                if create_response.status_code == 200:
+                    result = create_response.json()
+                    proxy_host_id = result.get("proxy_host_id")
+                    put_success(f"Reverse Proxy Entry created for {vm_name}. Proxy Host ID: {proxy_host_id}")
+                else:
+                    put_error(f"Failed to create Reverse Proxy Entry for {vm_name}. Error: {create_response.text}")
+                    raise Exception("Failed to create new proxy host")
+
                 # Update the proxmox_uris dictionary with the new domain
                 proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://{domain_name}"
             else:
-                put_error(f"Failed to create Reverse Proxy Entry for {vm_name}. Error: {response.text}")
+                put_error(f"Failed to retrieve existing proxy hosts. Status code: {existing_proxy_hosts_response.status_code}")
+                raise Exception("Failed to retrieve existing proxy hosts")
+
         except Exception as e:
-            put_error(f"An error occurred while creating Reverse Proxy Entry: {str(e)}")
+            put_error(f"An error occurred while creating/updating Reverse Proxy Entry: {str(e)}")
 
         time.sleep(2)
 
