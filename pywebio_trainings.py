@@ -38,6 +38,19 @@ SMTP_USERNAME = os.getenv('SMTP_USERNAME')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')
 
+def sanitize_training_name(name):
+    # Remove any characters that aren't alphanumeric, spaces, or hyphens
+    sanitized = re.sub(r'[^a-zA-Z0-9\s-]', '', name)
+    # Replace spaces with hyphens
+    sanitized = sanitized.replace(' ', '-')
+    # Convert to lowercase
+    sanitized = sanitized.lower()
+    # Remove any leading or trailing hyphens
+    sanitized = sanitized.strip('-')
+    # Limit the length to 63 characters (Proxmox VM name limit)
+    sanitized = sanitized[:63]
+    return sanitized
+
 def sanitize_name(name):
     # Remove leading/trailing whitespace
     name = name.strip()
@@ -140,13 +153,15 @@ def create_training_seats():
         return
     
     # Get available training options from training_templates.json
-    training_options = [template["name"] for template in training_templates]
+    training_options = []
+    for template in training_templates:
+        training_options.extend(template["name"])
 
     # Ask the user to select the desired training
     selected_training = select("Select the training", options=training_options, required=True)
 
     # Find the selected training template
-    selected_template = next((t for t in training_templates if t["name"] == selected_training), None)
+    selected_template = next((t for t in training_templates if selected_training in t["name"]), None)
     if not selected_template:
         put_error(f"No template found for training: {selected_training}")
         return
@@ -155,6 +170,9 @@ def create_training_seats():
     if not dhcp_server_id:
         put_error(f"No DHCP server ID found for training: {selected_training}")
         return
+
+    # Sanitize the selected training name
+    sanitized_training_name = sanitize_training_name(selected_training)
 
     # Request ticket number
     ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
@@ -238,8 +256,17 @@ def create_training_seats():
             put_error(f"No template ID found for node {best_node}")
             continue
 
-        # Create VM name
-        vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
+        # Create VM name using the sanitized training name
+        vm_name = f"{seat['first_name']}-{seat['last_name']}-{sanitized_training_name}"
+
+        # Ensure the entire vm_name is not longer than 63 characters
+        if len(vm_name) > 63:
+            # If it's too long, truncate the sanitized_training_name part
+            max_training_name_length = 63 - len(f"{seat['first_name']}-{seat['last_name']}-") - 1  # -1 for extra hyphen
+            vm_name = f"{seat['first_name']}-{seat['last_name']}-{sanitized_training_name[:max_training_name_length]}"
+
+        # Ensure the vm_name doesn't end with a hyphen
+        vm_name = vm_name.rstrip('-')
 
         # Step 2: Create VM
         current_step += 1
@@ -409,8 +436,7 @@ def create_training_seats():
                     node = ip_info.get('node')
                     vmid = ip_info.get('vmid')
                     
-                    # Store VM details
-                    vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
+                    # Store VM details using the correct, sanitized vm_name
                     vm_details[vm_name] = {
                         "ip": seat_ip_proxmox,
                         "node": node,
@@ -432,11 +458,9 @@ def create_training_seats():
         current_step += 1
         put_info(f"Creating connections in Guacamole and adding them to {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
 
-        # Find the matching template in the training templates
-        template = next((t for t in training_templates if t["name"] == selected_training), None)
-
-        if template:
-            connections = template["connections"]
+        # We already have the correct template from earlier in the function
+        if selected_template:
+            connections = selected_template["connections"]
             for connection in connections:
                 connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
                 
@@ -489,7 +513,7 @@ def create_training_seats():
                     try:
                         response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection-group", json={
                             "username": guacamole_username,
-                            "connection_group_id": template["connection_group_id"]
+                            "connection_group_id": selected_template["connection_group_id"]
                         })
                         response.raise_for_status()
                         put_success(f"User {guacamole_username} added to connection group successfully.")
@@ -500,7 +524,6 @@ def create_training_seats():
             put_error(f"No template found for training: {selected_training}")
 
         time.sleep(2)
-
         # After creating the user
         deployed_users.append(f"{seat['first_name'].lower()}.{seat['last_name'].lower()}")
         proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
@@ -511,8 +534,6 @@ def create_training_seats():
 
         start_date = datetime.strptime(training_dates['start_date'], '%d-%m-%Y').date()
         today = datetime.now().date()
-
-        vm_name = f"{seat['first_name']}-{seat['last_name']}-{selected_training}"
 
         if start_date > today:
             put_info(f"Start date {start_date} is in the future. Attempting to shut down VM {vm_name}...")
