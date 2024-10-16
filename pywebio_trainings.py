@@ -94,15 +94,15 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
     body += f"Training Start Date: {training_dates['start_date']}\n"
     body += f"Training End Date: {training_dates['end_date']}\n\n"
     
-    body += "Student Information:\n"
-    for student in student_info:
-        body += f"- {student['first_name']} {student['last_name']}\n"
-    body += "\n"
-    
-    body += "Deployed users:\n"
-    for user in deployed_users:
-        body += f"- {user}\n"
-    
+    body += f"URL for student connections: https://student-access.infinigate-labs.com\n"
+
+    body += "\nStudent Credentials:\n"
+    for user, password in user_passwords.items():
+        if password == "user has already been created at an earlier date":
+            body += f"- {user}: {password}\n"
+        else:
+            body += f"- {user}: {password}\n"
+
     body += "\nProxmox URIs of student seats for trainer:\n"
     for user, uri in proxmox_uris.items():
         body += f"- {user}: {uri}\n"
@@ -113,14 +113,12 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         body += f"  IP: {details['ip']}\n"
         body += f"  Node: {details['node']}\n"
         body += f"  VM ID: {details['vmid']}\n"
-        body += f"  MAC Address: {details.get('mac_address', 'N/A')}\n"
+        body += f"  MAC Address: {details.get('mac_address', 'N/A')}\n\n"
 
-    body += "\nUser Credentials:\n"
-    for user, password in user_passwords.items():
-        if password == "user has already been created at an earlier date":
-            body += f"- {user}: {password}\n"
-        else:
-            body += f"- {user}: {password}\n"
+    body += "Student Information:\n"
+    for student in student_info:
+        body += f"- {student['first_name']} {student['last_name']}\n"
+    body += "\n"
 
     msg = MIMEMultipart()
     msg['From'] = SMTP_USERNAME
