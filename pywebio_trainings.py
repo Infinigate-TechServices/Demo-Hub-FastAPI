@@ -26,10 +26,27 @@ API_BASE_URL = "http://localhost:8081/api"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def generate_password(length=8):
-    alphabet = string.ascii_letters + string.digits
-    password = ''.join(secrets.choice(alphabet) for i in range(length))
-    return password
+def generate_password(length=12):
+    """
+    Generate a password avoiding confusing characters like l, I, 1, O, 0.
+    Returns a string of the specified length (default 12) containing unambiguous characters.
+    """
+    # Define character sets without ambiguous characters
+    letters_clear = ''.join(c for c in string.ascii_letters if c not in 'lIoO')
+    digits_clear = ''.join(c for c in string.digits if c not in '01')
+    
+    # Combine into one alphabet of unambiguous characters
+    alphabet = letters_clear + digits_clear
+    
+    # Generate password ensuring at least one letter and one number
+    while True:
+        password = ''.join(secrets.choice(alphabet) for _ in range(length))
+        # Check if password contains at least one letter and one number
+        has_letter = any(c.isalpha() for c in password)
+        has_number = any(c.isdigit() for c in password)
+        
+        if has_letter and has_number:
+            return password
 
 # Email configuration
 SMTP_SERVER = os.getenv('SMTP_SERVER')
@@ -86,8 +103,30 @@ def sanitize_name(name):
     
     return '-'.join(parts)
 
+def validate_and_format_date(date_str):
+    """
+    Validates date format and converts dots to dashes if necessary.
+    Returns formatted date string if valid, None if invalid.
+    """
+    # First, replace any dots with dashes
+    date_str = date_str.replace('.', '-')
+    
+    # Check if the date matches the required format (DD-MM-YYYY)
+    if not re.match(r'^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-\d{4}$', date_str):
+        return None
+        
+    try:
+        # Verify it's a valid date
+        datetime.strptime(date_str, '%d-%m-%Y')
+        return date_str
+    except ValueError:
+        return None
+
 def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_passwords, vm_details, training_dates, student_info, selected_training):
     subject = f"Training Deployment Summary - Ticket {ticket_number}"
+    
+    # Calculate total number of seats
+    total_seats = len(student_info)
     
     body = "Deployment summary:\n\n"
     body += f"Training: {selected_training}\n"
@@ -96,20 +135,21 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
     
     body += f"URL for student connections: https://student-access.infinigate-labs.com\n"
 
+    body += f"\nSeats deployed in total: {total_seats}\n"
     body += "\nStudent Credentials:\n"
     for user, password in user_passwords.items():
         if password == "user has already been created at an earlier date":
-            body += f"- {user}: {password}\n"
+            body += f"{user}: {password}\n"
         else:
-            body += f"- {user}: {password}\n"
+            body += f"{user}: {password}\n"
 
     body += "\nProxmox URIs of student seats for trainer:\n"
     for user, uri in proxmox_uris.items():
-        body += f"- {user}: {uri}\n"
+        body += f"{user}: {uri}\n"
 
     body += "\nVM Details:\n"
     for vm_name, details in vm_details.items():
-        body += f"- {vm_name}:\n"
+        body += f"{vm_name}:\n"
         body += f"  IP: {details['ip']}\n"
         body += f"  Node: {details['node']}\n"
         body += f"  VM ID: {details['vmid']}\n"
@@ -117,7 +157,7 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
 
     body += "Student Information:\n"
     for student in student_info:
-        body += f"- {student['first_name']} {student['last_name']}\n"
+        body += f"{student['first_name']} {student['last_name']}\n"
     body += "\n"
 
     msg = MIMEMultipart()
@@ -128,13 +168,12 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
 
     try:
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.ehlo()  # Can be omitted
-        server.starttls()  # Secure the connection
-        server.ehlo()  # Can be omitted
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        #clear()
         put_success(f"Deployment summary email for Ticket {ticket_number} sent successfully.\n\nEmail Body:\n{body}")
     except Exception as e:
         put_error(f"Failed to send deployment summary email for Ticket {ticket_number}. Error: {str(e)}")
@@ -172,18 +211,43 @@ def create_training_seats():
     # Sanitize the selected training name
     sanitized_training_name = sanitize_training_name(selected_training)
 
-    # Request ticket number
+    # Request ticket number with validation
     ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
-
-    # Validate ticket number format
     while not re.match(r'^T\d{8}\.\d{4}$', ticket_number):
         put_error("Invalid ticket number format. Please use the format T20240709.0037.")
         ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
 
-    training_dates = input_group("Enter training dates", [
-        input("Training Start Date (DD-MM-YYYY)", name="start_date", required=True),
-        input("Training End Date (DD-MM-YYYY)", name="end_date", required=True)
-    ])
+    # Request and validate training dates
+    while True:
+        training_dates = input_group("Enter training dates (format: DD-MM-YYYY)", [
+            input("Training Start Date", name="start_date", required=True),
+            input("Training End Date", name="end_date", required=True)
+        ])
+        
+        # Validate and format start date
+        formatted_start_date = validate_and_format_date(training_dates['start_date'])
+        formatted_end_date = validate_and_format_date(training_dates['end_date'])
+        
+        if not formatted_start_date:
+            put_error("Invalid start date format. Please use DD-MM-YYYY format (e.g., 24-10-2024)")
+            continue
+            
+        if not formatted_end_date:
+            put_error("Invalid end date format. Please use DD-MM-YYYY format (e.g., 24-10-2024)")
+            continue
+            
+        # Verify end date is not before start date
+        start_date = datetime.strptime(formatted_start_date, '%d-%m-%Y')
+        end_date = datetime.strptime(formatted_end_date, '%d-%m-%Y')
+        
+        if end_date < start_date:
+            put_error("End date cannot be before start date.")
+            continue
+            
+        # If we get here, both dates are valid
+        training_dates['start_date'] = formatted_start_date
+        training_dates['end_date'] = formatted_end_date
+        break
     
     # Get student names
     students_input = textarea("Enter student names (one per line):", rows=10)
