@@ -93,13 +93,12 @@ def sanitize_name(name):
     # Replace spaces with dashes
     name = name.replace(' ', '-')
     
-    # Capitalize each part, except for the last part if it contains numbers
+    # Split into parts
     parts = name.split('-')
     for i in range(len(parts)):
-        if i == len(parts) - 1 and any(char.isdigit() for char in parts[i]):
-            parts[i] = ''.join(char.upper() if char.isalpha() else char for char in parts[i])
-        else:
-            parts[i] = parts[i].capitalize()
+        # Just capitalize the first letter of each part, regardless of numbers
+        if parts[i]:
+            parts[i] = parts[i][0].upper() + parts[i][1:].lower()
     
     return '-'.join(parts)
 
