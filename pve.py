@@ -77,13 +77,19 @@ def check_and_manage_vms():
     today = datetime.now().date()
     logger.info(f"Checking VMs for date: {today.strftime('%d-%m-%Y')}")
     
+    valid_vms = set()
+    
     for node in proxmox.nodes.get():
         logger.info(f"Checking node: {node['node']}")
         for vm in proxmox.nodes(node['node']).qemu.get():
             logger.info(f"Checking VM: {vm['name']} (ID: {vm['vmid']})")
+            valid_vms.add(vm['name'])
+            
             if 'tags' in vm and vm['tags']:
                 tags = vm['tags'].split(';')
                 logger.info(f"VM {vm['name']} has tags: {tags}")
+                
+                end_date = None
                 for tag in tags:
                     tag = tag.strip()
                     if tag.startswith('start-') and tag[6:] == today.strftime('%d-%m-%Y'):
@@ -92,13 +98,28 @@ def check_and_manage_vms():
                     elif tag.startswith('end-'):
                         try:
                             end_date = datetime.strptime(tag[4:], '%d-%m-%Y').date()
-                            if end_date <= today:
-                                logger.info(f"Scheduling VM {vm['name']} (ID: {vm['vmid']}) for removal due to expired end tag")
-                                schedule_vm_for_deletion(vm['name'], vm['vmid'])
                         except ValueError:
                             logger.error(f"Invalid date format in end tag for VM {vm['name']}: {tag}")
-            else:
-                logger.info(f"VM {vm['name']} has no tags")
+                
+                # Check if VM is already scheduled for deletion
+                if vm['name'] in vms_scheduled_for_deletion:
+                    if end_date is None or end_date > today:
+                        # End date was changed to future date or removed - cancel deletion
+                        with deletion_lock:
+                            logger.info(f"Removing {vm['name']} from deletion schedule due to updated end tag")
+                            del vms_scheduled_for_deletion[vm['name']]
+                elif end_date and end_date <= today:
+                    # Not scheduled yet and has expired end date - schedule it
+                    logger.info(f"Scheduling VM {vm['name']} (ID: {vm['vmid']}) for deletion due to expired end tag")
+                    schedule_vm_for_deletion(vm['name'], vm['vmid'])
+    
+    # Remove any VMs from scheduled deletion if they no longer exist
+    with deletion_lock:
+        scheduled_vms = list(vms_scheduled_for_deletion.keys())
+        for vm_name in scheduled_vms:
+            if vm_name not in valid_vms:
+                logger.info(f"Removing {vm_name} from deletion schedule as it no longer exists")
+                del vms_scheduled_for_deletion[vm_name]
     
     check_scheduled_deletions()
     logger.info("Completed VM check and management process")
