@@ -129,8 +129,13 @@ async def run_pve_check_now():
 @app.get("/api/v1/pve/scheduled-deletions")
 async def get_scheduled_deletions():
     with pve.deletion_lock:
-        scheduled = {vm_name: {'id': info['id'], 'deletion_time': info['deletion_time'].isoformat()} 
-                     for vm_name, info in pve.vms_scheduled_for_deletion.items()}
+        scheduled = {
+            vm_name: {
+                'id': info['id'],
+                'added_to_deletion_schedule_at': info['added_to_deletion_schedule_at'].isoformat()
+            } 
+            for vm_name, info in pve.vms_scheduled_for_deletion.items()
+        }
     return {"scheduled_deletions": scheduled}
 
 @app.post("/api/v1/pve/shutdown-vm/{vm_name}")
