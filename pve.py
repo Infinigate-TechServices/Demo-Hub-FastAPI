@@ -127,14 +127,14 @@ def check_and_manage_vms():
 def schedule_vm_for_deletion(vm_name, vm_id):
     with deletion_lock:
         if vm_name not in vms_scheduled_for_deletion:
-            deletion_time = datetime.now() + timedelta(hours=72)
+            added_at = datetime.now()
             vms_scheduled_for_deletion[vm_name] = {
                 'id': vm_id,
-                'deletion_time': deletion_time
+                'added_to_deletion_schedule_at': added_at
             }
-            logger.info(f"VM {vm_name} (ID: {vm_id}) scheduled for deletion at {deletion_time}")
+            logger.info(f"VM {vm_name} (ID: {vm_id}) added to deletion schedule at {added_at}")
         else:
-            logger.info(f"VM {vm_name} (ID: {vm_id}) already scheduled for deletion at {vms_scheduled_for_deletion[vm_name]['deletion_time']}")
+            logger.info(f"VM {vm_name} (ID: {vm_id}) already in deletion schedule since {vms_scheduled_for_deletion[vm_name]['added_to_deletion_schedule_at']}")
 
 def check_scheduled_deletions():
     logger.info("Checking scheduled deletions")
@@ -142,7 +142,7 @@ def check_scheduled_deletions():
     to_delete = []
     with deletion_lock:
         for vm_name, info in vms_scheduled_for_deletion.items():
-            if current_time >= info['deletion_time']:
+            if current_time >= info['added_to_deletion_schedule_at'] + timedelta(hours=72):
                 to_delete.append((vm_name, info['id']))
     
     for vm_name, vm_id in to_delete:
