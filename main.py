@@ -123,20 +123,77 @@ def start_vm(vm_name: str):
 
 @app.post("/api/v1/pve/run-check-now")
 async def run_pve_check_now():
-    pve.run_check_now()
-    return {"message": "PVE check initiated"}
+    """Run all checks immediately."""
+    try:
+        pve.run_check_now()
+        return {
+            "message": "All PVE checks completed successfully",
+            "steps": [
+                "Schedule updates completed",
+                "VM start checks completed",
+                "Deletion checks completed"
+            ],
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error running PVE checks: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/pve/run-start-check")
+async def run_vm_start_check():
+    """Run only the VM start check process."""
+    try:
+        result = pve.check_vm_start_status()
+        return {
+            "message": "VM start check completed",
+            "started_vms": result["started"],
+            "already_running": result["already_running"],
+            "failed_starts": result["failed"]
+        }
+    except Exception as e:
+        logger.error(f"Error running VM start check: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/pve/run-deletion-check")
+async def run_deletion_check():
+    """Run only the VM deletion check process."""
+    try:
+        pve.check_scheduled_deletions()
+        return {
+            "message": "VM deletion check completed",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error running deletion check: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/pve/update-schedules")
+async def update_vm_schedules():
+    """Update deletion schedules for all VMs with end tags."""
+    try:
+        result = pve.update_all_vm_schedules()
+        return {
+            "message": "VM schedules updated successfully",
+            "updated_vms": result["updated"],
+            "removed_from_schedule": result["removed"],
+            "total_scheduled_vms": result["total_scheduled"]
+        }
+    except Exception as e:
+        logger.error(f"Error updating VM schedules: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update VM schedules: {str(e)}")
 
 @app.get("/api/v1/pve/scheduled-deletions")
 async def get_scheduled_deletions():
-    with pve.deletion_lock:
-        scheduled = {
-            vm_name: {
-                'id': info['id'],
-                'added_to_deletion_schedule_at': info['added_to_deletion_schedule_at'].isoformat()
-            } 
-            for vm_name, info in pve.vms_scheduled_for_deletion.items()
+    """Get the current list of scheduled deletions."""
+    try:
+        scheduled = pve.get_scheduled_deletions()
+        return {
+            "scheduled_deletions": scheduled,
+            "total_scheduled": len(scheduled)
         }
-    return {"scheduled_deletions": scheduled}
+    except Exception as e:
+        logger.error(f"Error getting scheduled deletions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/pve/scheduled-deletions")
 async def clear_scheduled_deletions_endpoint():
@@ -153,8 +210,12 @@ def shutdown_vm(vm_name: str):
 
 @app.post("/api/v1/pve/remove-all-scheduled")
 async def remove_all_scheduled_vms():
-    result = pve.remove_all_scheduled_vms()
-    return result
+    try:
+        result = pve.remove_all_scheduled_vms()
+        return result
+    except Exception as e:
+        logger.error(f"Error removing all scheduled VMs: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/pve/get-vm-mac-address/{vm_name}")
 async def get_vm_mac_address_endpoint(vm_name: str):

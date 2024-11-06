@@ -8,7 +8,7 @@ import time
 import threading
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 import schedule
 import re
 
@@ -72,13 +72,71 @@ while True:
         break
     index += 1
 
-def check_and_manage_vms():
-    logger.info("Starting VM check and management process")
-    today = datetime.now().date()
+vms_scheduled_for_deletion = {}  # Format: {vm_name: {'id': vmid, 'end_date': date_obj, 'deletion_date': date_obj}}
+deletion_lock = threading.Lock()
+
+def parse_date_from_tag(tag):
+    """Parse date from tag string in format 'end-DD-MM-YYYY'"""
+    try:
+        date_str = tag[4:]  # Remove 'end-' prefix
+        return datetime.strptime(date_str, '%d-%m-%Y').date()
+    except ValueError:
+        return None
+
+def update_vm_schedule(vm_name: str, vm_id: int, end_date: date) -> bool:
+    """
+    Updates or adds a VM to the deletion schedule without attempting to delete it.
+    Only sets or updates the deletion_date based on the end_date.
+    
+    Args:
+        vm_name: Name of the VM
+        vm_id: ID of the VM
+        end_date: The end date from the VM's tag
+        
+    Returns:
+        bool: True if schedule was updated, False if there was an error
+    """
+    try:
+        deletion_date = end_date + timedelta(days=3)
+        
+        with deletion_lock:
+            if vm_name in vms_scheduled_for_deletion:
+                current_end_date = vms_scheduled_for_deletion[vm_name]['end_date']
+                if current_end_date != end_date:
+                    logger.info(f"Updating deletion schedule for VM {vm_name} due to end date change "
+                              f"(Old: {current_end_date.strftime('%d-%m-%Y')}, "
+                              f"New: {end_date.strftime('%d-%m-%Y')})")
+            else:
+                logger.info(f"Adding VM {vm_name} to deletion schedule")
+            
+            vms_scheduled_for_deletion[vm_name] = {
+                'id': vm_id,
+                'end_date': end_date,
+                'deletion_date': deletion_date
+            }
+            
+            logger.info(f"VM {vm_name} (ID: {vm_id}) scheduled - End date: {end_date.strftime('%d-%m-%Y')}, "
+                       f"Deletion date: {deletion_date.strftime('%d-%m-%Y')}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error updating deletion schedule for VM {vm_name}: {str(e)}")
+        return False
+
+def update_all_vm_schedules():
+    """
+    Check all VMs for end tags and update their deletion schedules.
+    Only handles schedule updates, no deletions.
+    """
+    logger.info("Starting VM schedule update process")
+    today = date.today()
     logger.info(f"Checking VMs for date: {today.strftime('%d-%m-%Y')}")
     
     valid_vms = set()
+    updated_schedules = []
+    removed_schedules = []
     
+    # Scan all VMs across all nodes
     for node in proxmox.nodes.get():
         logger.info(f"Checking node: {node['node']}")
         for vm in proxmox.nodes(node['node']).qemu.get():
@@ -89,87 +147,241 @@ def check_and_manage_vms():
                 tags = vm['tags'].split(';')
                 logger.info(f"VM {vm['name']} has tags: {tags}")
                 
+                # Look for end date tag
                 end_date = None
                 for tag in tags:
                     tag = tag.strip()
-                    if tag.startswith('start-') and tag[6:] == today.strftime('%d-%m-%Y'):
-                        logger.info(f"Starting VM {vm['name']} (ID: {vm['vmid']}) due to start tag")
-                        start_vm(vm['name'])
-                    elif tag.startswith('end-'):
-                        try:
-                            end_date = datetime.strptime(tag[4:], '%d-%m-%Y').date()
-                        except ValueError:
-                            logger.error(f"Invalid date format in end tag for VM {vm['name']}: {tag}")
+                    if tag.startswith('end-'):
+                        end_date = parse_date_from_tag(tag)
                 
-                # Check if VM is already scheduled for deletion
-                if vm['name'] in vms_scheduled_for_deletion:
-                    if end_date is None or end_date > today:
-                        # End date was changed to future date or removed - cancel deletion
-                        with deletion_lock:
-                            logger.info(f"Removing {vm['name']} from deletion schedule due to updated end tag")
-                            del vms_scheduled_for_deletion[vm['name']]
-                elif end_date and end_date <= today:
-                    # Not scheduled yet and has expired end date - schedule it
-                    logger.info(f"Scheduling VM {vm['name']} (ID: {vm['vmid']}) for deletion due to expired end tag")
-                    schedule_vm_for_deletion(vm['name'], vm['vmid'])
+                # Update or remove from schedule based on end date
+                if end_date:
+                    if update_vm_schedule(vm['name'], vm['vmid'], end_date):
+                        updated_schedules.append({
+                            'vm_name': vm['name'],
+                            'vm_id': vm['vmid'],
+                            'end_date': end_date.strftime('%d-%m-%Y'),
+                            'deletion_date': (end_date + timedelta(days=3)).strftime('%d-%m-%Y')
+                        })
+                elif vm['name'] in vms_scheduled_for_deletion:
+                    with deletion_lock:
+                        logger.info(f"Removing {vm['name']} from deletion schedule as end tag was removed")
+                        removed_schedules.append(vm['name'])
+                        del vms_scheduled_for_deletion[vm['name']]
     
-    # Remove any VMs from scheduled deletion if they no longer exist
+    # Clean up non-existent VMs
     with deletion_lock:
         scheduled_vms = list(vms_scheduled_for_deletion.keys())
         for vm_name in scheduled_vms:
             if vm_name not in valid_vms:
                 logger.info(f"Removing {vm_name} from deletion schedule as it no longer exists")
+                removed_schedules.append(vm_name)
                 del vms_scheduled_for_deletion[vm_name]
     
-    check_scheduled_deletions()
-    logger.info("Completed VM check and management process")
-
-def schedule_vm_for_deletion(vm_name, vm_id):
-    with deletion_lock:
-        if vm_name not in vms_scheduled_for_deletion:
-            added_at = datetime.now()
-            vms_scheduled_for_deletion[vm_name] = {
-                'id': vm_id,
-                'added_to_deletion_schedule_at': added_at
-            }
-            logger.info(f"VM {vm_name} (ID: {vm_id}) added to deletion schedule at {added_at}")
-        else:
-            logger.info(f"VM {vm_name} (ID: {vm_id}) already in deletion schedule since {vms_scheduled_for_deletion[vm_name]['added_to_deletion_schedule_at']}")
+    logger.info(f"Schedule update completed: {len(updated_schedules)} updated, "
+           f"{len(removed_schedules)} removed, "
+           f"{len(vms_scheduled_for_deletion)} total scheduled")
+    
+    return {
+        "updated": updated_schedules,
+        "removed": removed_schedules,
+        "total_scheduled": len(vms_scheduled_for_deletion)
+    }
 
 def check_scheduled_deletions():
+    """Check for and process VMs scheduled for deletion today or in the past."""
     logger.info("Checking scheduled deletions")
-    current_time = datetime.now()
+    today = date.today()
     to_delete = []
+    
     with deletion_lock:
         for vm_name, info in vms_scheduled_for_deletion.items():
-            if current_time >= info['added_to_deletion_schedule_at'] + timedelta(hours=72):
+            if info['deletion_date'] <= today:
+                logger.info(f"VM {vm_name} marked for deletion (Deletion date {info['deletion_date'].strftime('%d-%m-%Y')} "
+                          f"has passed or is today)")
                 to_delete.append((vm_name, info['id']))
+            else:
+                days_until_deletion = (info['deletion_date'] - today).days
+                logger.info(f"VM {vm_name} scheduled for deletion in {days_until_deletion} days "
+                           f"(End date: {info['end_date'].strftime('%d-%m-%Y')}, "
+                           f"Deletion date: {info['deletion_date'].strftime('%d-%m-%Y')})")
     
+    if to_delete:
+        logger.info(f"Found {len(to_delete)} VMs to delete")
+    else:
+        logger.info("No VMs need to be deleted at this time")
+    
+    # Process deletions
     for vm_name, vm_id in to_delete:
-        logger.info(f"Removing VM {vm_name} (ID: {vm_id}) after 72-hour delay")
-        remove_vm(VM(name=vm_name, template_id=None))
-        with deletion_lock:
-            del vms_scheduled_for_deletion[vm_name]
+        logger.info(f"Processing deletion for VM {vm_name} (ID: {vm_id})")
+        result = remove_vm(VM(name=vm_name, template_id=None))
+        
+        if "has been stopped and removed" in result:
+            logger.info(f"Successfully removed VM {vm_name} (ID: {vm_id})")
+            with deletion_lock:
+                if vm_name in vms_scheduled_for_deletion:
+                    del vms_scheduled_for_deletion[vm_name]
+        else:
+            logger.error(f"Failed to remove VM {vm_name} (ID: {vm_id}). Result: {result}")
 
-def run_check_now():
-    logger.info("Running VM check and management process immediately")
-    check_and_manage_vms()
+def get_scheduled_deletions():
+    """Get the current list of scheduled deletions."""
+    with deletion_lock:
+        return {
+            vm_name: {
+                'id': info['id'],
+                'end_date': info['end_date'].strftime('%d-%m-%Y'),
+                'deletion_date': info['deletion_date'].strftime('%d-%m-%Y')
+            }
+            for vm_name, info in vms_scheduled_for_deletion.items()
+        }
 
-def run_background_check():
-    logger.info("Running background VM check process")
-    try:
-        check_and_manage_vms()
-        logger.info("Completed VM check and management process")
-    except Exception as e:
-        logger.error(f"Error in VM check and management process: {e}")
+def clear_scheduled_deletions():
+    """Clear all scheduled deletions without removing VMs."""
+    logger.info("Clearing all scheduled deletions")
+    
+    with deletion_lock:
+        cleared_entries = {
+            vm_name: {
+                'id': info['id'],
+                'end_date': info['end_date'].strftime('%d-%m-%Y'),
+                'deletion_date': info['deletion_date'].strftime('%d-%m-%Y')
+            }
+            for vm_name, info in vms_scheduled_for_deletion.items()
+        }
+        count = len(vms_scheduled_for_deletion)
+        vms_scheduled_for_deletion.clear()
+        
+        logger.info(f"Cleared {count} entries from scheduled deletions")
+        
+    return {
+        "message": f"Successfully cleared {count} scheduled deletions",
+        "cleared_count": count,
+        "cleared_entries": cleared_entries
+    }
+
+def check_vm_start_status():
+    """
+    Check VMs for start tags and start them if:
+    - The start date is today or in the past
+    - The VM is not already running
+    
+    Returns:
+        dict: Information about started VMs and attempts
+    """
+    logger.info("Starting VM start status check")
+    today = date.today()
+    started_vms = []
+    already_running = []
+    failed_starts = []
+
+    for node in proxmox.nodes.get():
+        logger.info(f"Checking node: {node['node']}")
+        for vm in proxmox.nodes(node['node']).qemu.get():
+            if 'tags' in vm and vm['tags']:
+                tags = vm['tags'].split(';')
+                logger.debug(f"Checking start tags for VM {vm['name']}")
+                
+                # Look for start date tag
+                for tag in tags:
+                    tag = tag.strip()
+                    if tag.startswith('start-'):
+                        try:
+                            start_date = datetime.strptime(tag[6:], '%d-%m-%Y').date()
+                            if start_date <= today:
+                                # Check if VM is already running
+                                status = proxmox.nodes(node['node']).qemu(vm['vmid']).status.current.get()
+                                
+                                if status['status'] == 'running':
+                                    logger.info(f"VM {vm['name']} already running")
+                                    already_running.append(vm['name'])
+                                else:
+                                    logger.info(f"Starting VM {vm['name']} (ID: {vm['vmid']}) as start date "
+                                              f"{start_date.strftime('%d-%m-%Y')} has passed")
+                                    result = start_vm(vm['name'])
+                                    
+                                    if "error" not in result:
+                                        started_vms.append({
+                                            'name': vm['name'],
+                                            'id': vm['vmid'],
+                                            'start_date': start_date.strftime('%d-%m-%Y')
+                                        })
+                                    else:
+                                        failed_starts.append({
+                                            'name': vm['name'],
+                                            'id': vm['vmid'],
+                                            'error': result['error']
+                                        })
+                        except ValueError:
+                            logger.error(f"Invalid date format in start tag for VM {vm['name']}: {tag}")
+
+    return {
+        "started": started_vms,
+        "already_running": already_running,
+        "failed": failed_starts
+    }
 
 def schedule_daily_check():
-    schedule.every().day.at("03:00").do(run_background_check)
-    logger.info("Daily VM check scheduled for 3:00 AM")
+    """Schedule the daily background tasks."""
+    # Update schedules at 3:00 AM
+    schedule.every().day.at("03:00").do(run_schedule_update)
+    # Check VMs to start at 3:30 AM
+    schedule.every().day.at("03:30").do(run_start_check)
+    # Process deletions at 4:00 AM
+    schedule.every().day.at("04:00").do(run_deletion_check)
+    
+    logger.info("Daily tasks scheduled: "
+                "schedule update at 3:00 AM, "
+                "VM start check at 3:30 AM, "
+                "deletion check at 4:00 AM")
 
     while True:
         schedule.run_pending()
         time.sleep(60)  # Sleep for 1 minute
+
+def run_schedule_update():
+    """Run the schedule update process."""
+    logger.info("Running VM schedule update process")
+    try:
+        update_all_vm_schedules()
+        logger.info("Completed VM schedule update process")
+    except Exception as e:
+        logger.error(f"Error in VM schedule update process: {e}")
+
+def run_deletion_check():
+    """Run the deletion check process."""
+    logger.info("Running VM deletion check process")
+    try:
+        check_scheduled_deletions()
+        logger.info("Completed VM deletion check process")
+    except Exception as e:
+        logger.error(f"Error in VM deletion check process: {e}")
+
+def run_start_check():
+    """Run the VM start check process."""
+    logger.info("Running VM start check process")
+    try:
+        result = check_vm_start_status()
+        logger.info(f"VM start check completed: "
+                   f"{len(result['started'])} VMs started, "
+                   f"{len(result['already_running'])} already running, "
+                   f"{len(result['failed'])} failed to start")
+    except Exception as e:
+        logger.error(f"Error in VM start check process: {e}")
+
+def run_check_now():
+    """Run all checks immediately."""
+    logger.info("Running immediate VM check processes")
+    try:
+        # First update schedules
+        update_all_vm_schedules()
+        # Then check VM starts
+        check_vm_start_status()
+        # Finally check for deletions
+        check_scheduled_deletions()
+        logger.info("Completed immediate VM check processes")
+    except Exception as e:
+        logger.error(f"Error during immediate checks: {e}")
 
 def start_background_check():
     logger.info("Starting background check scheduler")
@@ -270,6 +482,7 @@ def create_linked_clone(name: str, template_id: int, node: str):
     return proxmox.nodes(node).qemu(template_id).post('clone', vmid=template_id, newid=vmid, name=name, full=0)
 
 def remove_all_scheduled_vms():
+    """Immediately remove all VMs that are scheduled for deletion."""
     logger.info("Starting immediate removal of all VMs scheduled for deletion")
     removed_vms = []
     failed_removals = []
@@ -317,21 +530,15 @@ def remove_all_scheduled_vms():
     }
 
 def clear_scheduled_deletions():
-    """
-    Removes all entries from the scheduled deletions list without actually deleting the VMs.
-    
-    Returns:
-        dict: A dictionary containing the number of entries cleared and the cleared entries
-    """
+    """Clear all scheduled deletions without removing VMs."""
     logger.info("Clearing all scheduled deletions")
-    cleared_entries = {}
     
     with deletion_lock:
-        # Store the current entries before clearing
         cleared_entries = {
             vm_name: {
                 'id': info['id'],
-                'scheduled_at': info['added_to_deletion_schedule_at'].isoformat()
+                'end_date': info['end_date'].strftime('%d-%m-%Y'),
+                'deletion_date': info['deletion_date'].strftime('%d-%m-%Y')
             }
             for vm_name, info in vms_scheduled_for_deletion.items()
         }
@@ -344,7 +551,7 @@ def clear_scheduled_deletions():
         "message": f"Successfully cleared {count} scheduled deletions",
         "cleared_count": count,
         "cleared_entries": cleared_entries
-}
+    }
 
 def remove_vm(vm: VM):
     logger.info(f"Attempting to remove VM '{vm.name}'")
@@ -358,7 +565,7 @@ def remove_vm(vm: VM):
     
     try:
         if stop_vm(vm.name):
-            timeout = 60  # 60 seconds timeout
+            timeout = 60
             start_time = time.time()
             while time.time() - start_time < timeout:
                 status = proxmox.nodes(node).qemu(vmid).status.current.get()['status']
@@ -538,10 +745,6 @@ def get_vm_mac_address(vm_name):
     except Exception as e:
         logger.error(f"Error getting MAC address for VM '{vm_name}' (ID: {vmid}) on node {node}: {str(e)}")
         return None
-
-# Initialize global variables
-vms_scheduled_for_deletion = {}
-deletion_lock = threading.Lock()
 
 # Start the background check thread
 start_background_check()
