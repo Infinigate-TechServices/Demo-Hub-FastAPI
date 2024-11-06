@@ -316,6 +316,36 @@ def remove_all_scheduled_vms():
         "failed_removals": failed_removals
     }
 
+def clear_scheduled_deletions():
+    """
+    Removes all entries from the scheduled deletions list without actually deleting the VMs.
+    
+    Returns:
+        dict: A dictionary containing the number of entries cleared and the cleared entries
+    """
+    logger.info("Clearing all scheduled deletions")
+    cleared_entries = {}
+    
+    with deletion_lock:
+        # Store the current entries before clearing
+        cleared_entries = {
+            vm_name: {
+                'id': info['id'],
+                'scheduled_at': info['added_to_deletion_schedule_at'].isoformat()
+            }
+            for vm_name, info in vms_scheduled_for_deletion.items()
+        }
+        count = len(vms_scheduled_for_deletion)
+        vms_scheduled_for_deletion.clear()
+        
+        logger.info(f"Cleared {count} entries from scheduled deletions")
+        
+    return {
+        "message": f"Successfully cleared {count} scheduled deletions",
+        "cleared_count": count,
+        "cleared_entries": cleared_entries
+}
+
 def remove_vm(vm: VM):
     logger.info(f"Attempting to remove VM '{vm.name}'")
     

@@ -138,6 +138,15 @@ async def get_scheduled_deletions():
         }
     return {"scheduled_deletions": scheduled}
 
+@app.delete("/api/v1/pve/scheduled-deletions")
+async def clear_scheduled_deletions_endpoint():
+    try:
+        result = pve.clear_scheduled_deletions()
+        return result
+    except Exception as e:
+        logger.error(f"Error clearing scheduled deletions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear scheduled deletions: {str(e)}")
+
 @app.post("/api/v1/pve/shutdown-vm/{vm_name}")
 def shutdown_vm(vm_name: str):
     return pve.shutdown_vm(vm_name)
