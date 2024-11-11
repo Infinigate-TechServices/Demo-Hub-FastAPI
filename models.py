@@ -94,6 +94,11 @@ class AddUserToConnectionGroupRequest(BaseModel):
     username: str
     connection_group_id: str
 
+class ConnectionGroupCreate(BaseModel):
+    name: str
+    parent_identifier: str = "ROOT"
+    type: str = "ORGANIZATIONAL"
+
 # Authentik models
 class CreateAuthentikUserInput(BaseModel):
     username: str

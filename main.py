@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pywebio.platform.fastapi import asgi_app
-from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput, DHCPRemovalRequest, DHCPReservationRequest, DHCPReservationKnownIPRequest
+from models import RecordA, TrainingSeat, ProxyHost, ProxyHostCreate, VM, CreateUserInput, CreateUserRequest, AddTagsRequest, LinkedClone, AddUserToGroupInput, GuacamoleConnectionRequest, AddConnectionToUserRequest, AddUserToConnectionGroupRequest, CreateAuthentikUserInput, AddAuthentikUserToGroupInput, DHCPRemovalRequest, DHCPReservationRequest, DHCPReservationKnownIPRequest, ConnectionGroupCreate
 import cf
 import pve
 import guacamole
@@ -374,7 +374,7 @@ async def add_user_to_connection_group_v2(request: AddUserToConnectionGroupReque
         return {"message": f"User {request.username} added to connection group {request.connection_group_id} successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to add user to connection group")
-    
+
 @app.get("/api/v1/guacamole/list-users")
 async def list_guacamole_users():
     users = guacamole.list_users()
@@ -382,6 +382,65 @@ async def list_guacamole_users():
         return {"users": users}
     else:
         raise HTTPException(status_code=500, detail="Failed to retrieve users from Guacamole")
+
+@app.get("/api/v1/guacamole/connection-groups")
+async def list_guacamole_connection_groups():
+    """List all connection groups in Guacamole."""
+    try:
+        groups = guacamole.list_connection_groups()
+        if groups is not None:
+            return {"connection_groups": groups}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to retrieve connection groups")
+    except Exception as e:
+        logger.error(f"Error listing connection groups: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@app.post("/api/v1/guacamole/connection-groups")
+async def create_guacamole_connection_group(group: ConnectionGroupCreate):
+    """Create a new connection group in Guacamole."""
+    try:
+        result = guacamole.create_connection_group(
+            name=group.name,
+            parent_identifier=group.parent_identifier,
+            type=group.type
+        )
+        if result:
+            return {"message": f"Connection group '{group.name}' created successfully", "group": result}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create connection group")
+    except Exception as e:
+        logger.error(f"Error creating connection group: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/v1/guacamole/connection-groups/{group_name}")
+async def delete_guacamole_connection_group(group_name: str):
+    """Delete a connection group by its name and all its contents recursively."""
+    try:
+        result = guacamole.delete_connection_group_by_name(group_name)
+        
+        if result['success']:
+            return {
+                "message": result['message'],
+                "summary": result['summary']
+            }
+        else:
+            raise HTTPException(
+                status_code=404 if "No connection group found" in result['message'] else 500,
+                detail={
+                    "message": result['message'],
+                    "summary": result['summary']
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error deleting connection group: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 # LLDAP endpoints
 @app.post("/api/v1/lldap/users")
