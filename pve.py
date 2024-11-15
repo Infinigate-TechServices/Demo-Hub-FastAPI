@@ -421,28 +421,26 @@ def evaluate_nodes_for_date(target_date):
         
         for vm in vms:
             vm_config = proxmox.nodes(node).qemu(vm['vmid']).config.get()
-            max_memory = int(vm_config.get('memory', 0))
-            if 'balloon' in vm_config:
-                max_memory = max(max_memory, int(vm_config['balloon']))
+            memory_mb = int(vm_config.get('memory', 0))  # Maximum memory in MB
             
             if 'tags' in vm and vm['tags']:
                 tags = vm['tags'].split(';')
                 for tag in tags:
                     if tag.startswith('start-'):
-                        start_date_str = tag[6:]
                         try:
-                            start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
+                            start_date = datetime.strptime(tag[6:], "%d-%m-%Y").date()
                             if start_date <= target_date:
-                                expected_memory_usage += max_memory
+                                expected_memory_usage += memory_mb
                                 break
                         except ValueError:
                             logger.warning(f"Invalid date format in tag for VM {vm['name']}: {tag}")
         
-        # Calculate the expected load ratio
-        expected_load_ratio = expected_memory_usage / total_memory
+        # Convert MB to bytes for ratio calculation (total_memory is in bytes)
+        expected_memory_bytes = expected_memory_usage * 1024 * 1024
+        expected_load_ratio = expected_memory_bytes / total_memory
         
-        logger.info(f"Node {node}: Expected memory usage: {expected_memory_usage / (1024*1024):.2f} GB, "
-                    f"Total memory: {total_memory / (1024*1024):.2f} GB, "
+        logger.info(f"Node {node}: Expected memory usage: {expected_memory_usage / 1024:.2f} GB, "
+                    f"Total memory: {total_memory / (1024*1024*1024):.2f} GB, "
                     f"Expected load ratio: {expected_load_ratio:.2f}")
         
         if expected_load_ratio < min_expected_load_ratio:

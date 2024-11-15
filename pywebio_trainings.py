@@ -524,17 +524,7 @@ def create_training_seats():
             connection_group_name = f"{sanitized_training_name}-{training_dates['start_date']}"
             
             try:
-                # Create the connection group
-                connection_group_data = {
-                    "name": connection_group_name,
-                    "parent_identifier": "ROOT",
-                    "type": "ORGANIZATIONAL"
-                }
-                response = requests.post(f"{API_BASE_URL}/v1/guacamole/connection-groups", json=connection_group_data)
-                response.raise_for_status()
-                
-                # Get the new connection group's identifier
-                time.sleep(2)  # Wait for group creation to complete
+                # First check if connection group exists
                 response = requests.get(f"{API_BASE_URL}/v1/guacamole/connection-groups")
                 response.raise_for_status()
                 groups = response.json().get("connection_groups", {})
@@ -543,10 +533,33 @@ def create_training_seats():
                 for group_id, group in groups.items():
                     if group.get("name") == connection_group_name and group.get("parentIdentifier") == "ROOT":
                         connection_group_id = group.get("identifier")
+                        put_info(f"Found existing connection group: {connection_group_name} (ID: {connection_group_id})")
                         break
                 
+                # Create group only if it doesn't exist
                 if not connection_group_id:
-                    raise Exception(f"Could not find ID for newly created connection group: {connection_group_name}")
+                    connection_group_data = {
+                        "name": connection_group_name,
+                        "parent_identifier": "ROOT",
+                        "type": "ORGANIZATIONAL"
+                    }
+                    response = requests.post(f"{API_BASE_URL}/v1/guacamole/connection-groups", json=connection_group_data)
+                    response.raise_for_status()
+                    
+                    # Get the new group's identifier
+                    time.sleep(2)
+                    response = requests.get(f"{API_BASE_URL}/v1/guacamole/connection-groups")
+                    response.raise_for_status()
+                    groups = response.json().get("connection_groups", {})
+                    
+                    for group_id, group in groups.items():
+                        if group.get("name") == connection_group_name and group.get("parentIdentifier") == "ROOT":
+                            connection_group_id = group.get("identifier")
+                            put_success(f"Created new connection group: {connection_group_name} (ID: {connection_group_id})")
+                            break
+                
+                if not connection_group_id:
+                    raise Exception(f"Could not find or create connection group: {connection_group_name}")
                 
                 put_success(f"Created connection group: {connection_group_name} (ID: {connection_group_id})")
                 
