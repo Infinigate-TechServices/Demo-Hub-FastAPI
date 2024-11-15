@@ -515,72 +515,103 @@ def create_training_seats():
         except Exception as e:
             put_error(f"An error occurred while finding Proxmox IP: {str(e)}")
 
-        # Step 8: Create connections for Guacamole User
+        # Step 8: Create connection group, create connections, and add them to Guacamole User
         current_step += 1
         put_info(f"Creating connections in Guacamole and adding them to {seat['first_name']} {seat['last_name']}... ({current_step}/{total_steps})")
 
-        # We already have the correct template from earlier in the function
         if selected_template:
-            connections = selected_template["connections"]
-            for connection in connections:
-                connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
-                
-                # Prepare connection data
-                connection_data = {
-                    "parentIdentifier": connection.get("parent_id", "ROOT"),
-                    "name": connection_name,
-                    "protocol": connection["protocol"],
-                    "parameters": {},
-                    "attributes": {
-                        "guacd-hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip_proxmox),
-                        "guacd-port": str(connection["proxy_port"])
-                    }
+            # Create connection group name using sanitized training name and start date
+            connection_group_name = f"{sanitized_training_name}-{training_dates['start_date']}"
+            
+            try:
+                # Create the connection group
+                connection_group_data = {
+                    "name": connection_group_name,
+                    "parent_identifier": "ROOT",
+                    "type": "ORGANIZATIONAL"
                 }
+                response = requests.post(f"{API_BASE_URL}/v1/guacamole/connection-groups", json=connection_group_data)
+                response.raise_for_status()
+                
+                # Get the new connection group's identifier
+                time.sleep(2)  # Wait for group creation to complete
+                response = requests.get(f"{API_BASE_URL}/v1/guacamole/connection-groups")
+                response.raise_for_status()
+                groups = response.json().get("connection_groups", {})
+                
+                connection_group_id = None
+                for group_id, group in groups.items():
+                    if group.get("name") == connection_group_name and group.get("parentIdentifier") == "ROOT":
+                        connection_group_id = group.get("identifier")
+                        break
+                
+                if not connection_group_id:
+                    raise Exception(f"Could not find ID for newly created connection group: {connection_group_name}")
+                
+                put_success(f"Created connection group: {connection_group_name} (ID: {connection_group_id})")
+                
+                # Create connections within the new connection group
+                connections = selected_template["connections"]
+                for connection in connections:
+                    connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
+                    
+                    connection_data = {
+                        "parentIdentifier": connection_group_id,
+                        "name": connection_name,
+                        "protocol": connection["protocol"],
+                        "parameters": {},
+                        "attributes": {
+                            "guacd-hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip_proxmox),
+                            "guacd-port": str(connection["proxy_port"])
+                        }
+                    }
 
-                # Add all parameters from the connection, excluding specific keys
-                excluded_keys = ["connection_name", "parent_id", "protocol", "proxy_hostname", "proxy_port"]
-                for key, value in connection.items():
-                    if key not in excluded_keys:
-                        connection_data["parameters"][key] = str(value) if isinstance(value, bool) else value
+                    # Add all parameters from the connection
+                    excluded_keys = ["connection_name", "protocol", "proxy_hostname", "proxy_port"]
+                    for key, value in connection.items():
+                        if key not in excluded_keys:
+                            connection_data["parameters"][key] = str(value) if isinstance(value, bool) else value
 
-                # Remove any parameters with empty values
-                connection_data["parameters"] = {k: v for k, v in connection_data["parameters"].items() if v != ""}
+                    # Remove empty parameters
+                    connection_data["parameters"] = {k: v for k, v in connection_data["parameters"].items() if v != ""}
 
-                with put_loading():
-                    try:
-                        # Create the connection
-                        response = requests.post(f"{API_BASE_URL}/v2/guacamole/connections", json=connection_data)
-                        response.raise_for_status()
-                        result = response.json()
-                        
-                        if 'connection_id' in result:
-                            connection_id = result['connection_id']
-                            
-                            # Give permission to the user
-                            add_connection_data = {
-                                "username": guacamole_username,
-                                "connection_id": connection_id
-                            }
-                            response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection", json=add_connection_data)
+                    with put_loading():
+                        try:
+                            # Create connection
+                            response = requests.post(f"{API_BASE_URL}/v2/guacamole/connections", json=connection_data)
                             response.raise_for_status()
+                            result = response.json()
                             
-                            put_success(f"Connection {connection_name} created and added to user {guacamole_username} successfully.")
-                        else:
-                            put_error(f"Failed to create connection {connection_name}. Connection ID not received.")
-                    except requests.RequestException as e:
-                        put_error(f"Failed to create or assign connection {connection_name}. Error: {str(e)}")
-                        
-                    put_info(f"Adding user {guacamole_username} to connection group...")
-                    try:
-                        response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection-group", json={
-                            "username": guacamole_username,
-                            "connection_group_id": selected_template["connection_group_id"]
-                        })
-                        response.raise_for_status()
-                        put_success(f"User {guacamole_username} added to connection group successfully.")
-                    except requests.RequestException as e:
-                        put_error(f"Failed to add user {guacamole_username} to connection group. Error: {str(e)}")
-
+                            if 'connection_id' in result:
+                                connection_id = result['connection_id']
+                                
+                                # Add connection permission
+                                add_connection_data = {
+                                    "username": guacamole_username,
+                                    "connection_id": connection_id
+                                }
+                                response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection", json=add_connection_data)
+                                response.raise_for_status()
+                                
+                                put_success(f"Connection {connection_name} created and added to user {guacamole_username}")
+                            else:
+                                put_error(f"Failed to create connection {connection_name}")
+                        except requests.RequestException as e:
+                            put_error(f"Failed to create or assign connection {connection_name}: {str(e)}")
+                
+                # Add user to connection group
+                try:
+                    response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection-group", json={
+                        "username": guacamole_username,
+                        "connection_group_id": connection_group_id
+                    })
+                    response.raise_for_status()
+                    put_success(f"User {guacamole_username} added to connection group {connection_group_name}")
+                except requests.RequestException as e:
+                    put_error(f"Failed to add user to connection group: {str(e)}")
+                            
+            except Exception as e:
+                put_error(f"An error occurred while creating connection group and connections: {str(e)}")
         else:
             put_error(f"No template found for training: {selected_training}")
 
