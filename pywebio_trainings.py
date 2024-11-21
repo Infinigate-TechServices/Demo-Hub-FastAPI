@@ -142,6 +142,7 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         else:
             body += f"{user}: {password}\n"
 
+    body += "\nIMPORTANT NOTE: Direct access to the Proxmox UI via proxy hosts is currently disabled.\n"
     body += "\nProxmox URIs of student seats for trainer:\n"
     for user, uri in proxmox_uris.items():
         body += f"{user}: {uri}\n"
@@ -723,8 +724,9 @@ def create_training_seats():
             logger.error(f"Error validating DHCP reservation for VM {vm_name}: {str(e)}")
             logger.error(traceback.format_exc())
             
-        # Step 12: Create or Update Nginx Reverse Proxy Entry
         current_step += 1
+        put_info(f"Step 12 (Nginx Reverse Proxy) is currently disabled... ({current_step}/{total_steps})")
+        """
         put_info(f"Creating or Updating Reverse Proxy Entry for {vm_name}... ({current_step}/{total_steps})")
         try:
             domain_name = f"proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
@@ -784,6 +786,11 @@ def create_training_seats():
             put_error(f"An error occurred while creating/updating Reverse Proxy Entry: {str(e)}")
 
         time.sleep(2)
+        """
+        
+        # Still update the proxmox_uris dictionary with the standard format
+        domain_name = f"proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
+        proxmox_uris[f"{seat['first_name'].lower()}.{seat['last_name'].lower()}"] = f"https://{domain_name}"
 
     put_success("Training seats creation process completed!")
 
