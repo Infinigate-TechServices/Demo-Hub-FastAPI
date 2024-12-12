@@ -13,6 +13,7 @@ import logging
 import traceback
 from datetime import datetime
 import requests
+import json
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -228,6 +229,19 @@ async def get_vm_mac_address_endpoint(vm_name: str):
     except Exception as e:
         logger.error(f"Error getting MAC address for VM {vm_name}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get MAC address: {str(e)}")
+
+@app.get("/api/v1/pve/vm-mac-addresses")
+async def get_vm_mac_addresses():
+    """Get MAC addresses for all VMs."""
+    try:
+        mac_addresses = pve.get_all_vm_mac_addresses()
+        if mac_addresses is not None:
+            return {"vm_mac_addresses": mac_addresses}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to collect MAC addresses")
+    except Exception as e:
+        logger.error(f"Error in MAC address collection endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Nginx Proxy Manager endpoints
 @app.post("/api/v1/nginx/create-proxy-host")
@@ -626,6 +640,69 @@ async def add_dhcp_reservation_known_ip_endpoint(request: DHCPReservationKnownIP
     except Exception as e:
         logger.error(f"Error adding DHCP reservation with known IP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to add DHCP reservation: {str(e)}")
+    
+@app.get("/api/v1/fortigate/validate-dhcp/{dhcp_server_id}")
+async def validate_dhcp(dhcp_server_id: int):
+   try:
+       vm_macs = pve.get_all_vm_mac_addresses()
+       dhcp_config = fortigate.get_dhcp_server_config(dhcp_server_id)
+       
+       if not isinstance(dhcp_config, dict):
+           raise HTTPException(status_code=500, detail=f"Invalid DHCP config type: {type(dhcp_config)}")
+           
+       reservations = dhcp_config.get('reserved-address', [])
+       if not reservations:
+           raise HTTPException(status_code=404, detail="No DHCP reservations found")
+
+       valid_macs = {mac.lower() for vm_data in vm_macs.values() 
+                    for mac in vm_data['interfaces'].values()}
+       
+       orphaned_reservations = [
+           {
+               'ip': res['ip'],
+               'mac': res['mac'],
+               'description': res['description']
+           }
+           for res in reservations
+           if res['mac'].lower() not in valid_macs
+       ]
+
+       return {
+           "message": f"Found {len(orphaned_reservations)} orphaned DHCP reservations",
+           "orphaned_reservations": orphaned_reservations, 
+           "total_dhcp_reservations": len(reservations),
+           "total_vm_macs": len(valid_macs)
+       }
+       
+   except Exception as e:
+       logger.error(f"Error validating DHCP reservations: {str(e)}")
+       raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+   
+@app.post("/api/v1/fortigate/remove-orphaned-dhcp/{dhcp_server_id}")
+async def remove_orphaned_dhcp(dhcp_server_id: int):
+   try:
+       orphaned = await validate_dhcp(dhcp_server_id) 
+       removed_count = 0
+       failed = []
+       
+       for reservation in orphaned['orphaned_reservations']:
+           try:
+               result = fortigate.remove_dhcp_reservations(seat_macs=[reservation['mac']], dhcp_server_id=dhcp_server_id)
+               if result > 0:
+                   removed_count += 1
+               else:
+                   failed.append(reservation['mac'])
+           except Exception as e:
+               failed.append(reservation['mac'])
+               logger.error(f"Failed to remove {reservation['mac']}: {str(e)}")
+               
+       return {
+           "removed_count": removed_count,
+           "failed_macs": failed
+       }
+       
+   except Exception as e:
+       raise HTTPException(status_code=500, detail=str(e))
 
 # Mounting PyWebIO app
 app.mount("/", asgi_app(pywebio_main), name="pywebio")

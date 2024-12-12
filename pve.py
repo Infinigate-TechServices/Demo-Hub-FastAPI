@@ -744,5 +744,51 @@ def get_vm_mac_address(vm_name):
         logger.error(f"Error getting MAC address for VM '{vm_name}' (ID: {vmid}) on node {node}: {str(e)}")
         return None
 
+def get_all_vm_mac_addresses():
+    """Collect MAC addresses for all VMs across all nodes."""
+    logger.info("Collecting MAC addresses for all VMs")
+    mac_addresses = {}
+    
+    try:
+        for node in proxmox.nodes.get():
+            node_name = node['node']
+            logger.debug(f"Checking node: {node_name}")
+            
+            for vm in proxmox.nodes(node_name).qemu.get():
+                vm_name = vm['name']
+                vm_id = vm['vmid']
+                logger.debug(f"Processing VM: {vm_name} (ID: {vm_id})")
+                
+                try:
+                    vm_config = proxmox.nodes(node_name).qemu(vm_id).config.get()
+                    vm_macs = {}
+                    
+                    # Check all possible network interfaces (net0 through net7)
+                    for i in range(8):
+                        net_key = f'net{i}'
+                        if net_key in vm_config:
+                            # Extract MAC address from the config string
+                            net_config = vm_config[net_key]
+                            mac = net_config.split(',')[0].split('=')[1]
+                            vm_macs[net_key] = mac
+                    
+                    if vm_macs:
+                        mac_addresses[vm_name] = {
+                            'vm_id': vm_id,
+                            'node': node_name,
+                            'interfaces': vm_macs
+                        }
+                        
+                except Exception as e:
+                    logger.error(f"Error getting MAC addresses for VM {vm_name}: {str(e)}")
+                    continue
+                    
+        logger.info(f"Successfully collected MAC addresses for {len(mac_addresses)} VMs")
+        return mac_addresses
+    
+    except Exception as e:
+        logger.error(f"Error collecting MAC addresses: {str(e)}")
+        return None
+
 # Start the background check thread
 start_background_check()
