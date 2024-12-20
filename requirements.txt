@@ -3,10 +3,11 @@ fastapi
 uvicorn
 pywebio
 python-dotenv
-cloudflare
+cloudflare==2.20.0
 proxmoxer
 requests
 requests.toolbelt
 gql
 unidecode
 schedule
+websockets
