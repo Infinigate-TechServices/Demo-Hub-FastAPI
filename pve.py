@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, date, timedelta
 import schedule
 import re
+import fortigate
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -210,14 +211,54 @@ def check_scheduled_deletions():
         logger.info(f"Found {len(to_delete)} VMs to delete")
     else:
         logger.info("No VMs need to be deleted at this time")
+        return
+
+    # Load templates once for all VMs
+    templates = get_training_templates()
+    if not templates:
+        logger.warning("Could not load training templates, DHCP reservations will not be removed")
     
     # Process deletions
     for vm_name, vm_id in to_delete:
         logger.info(f"Processing deletion for VM {vm_name} (ID: {vm_id})")
+        
+        # Get MAC address BEFORE removing the VM
+        vm_mac = None
+        dhcp_server_id = None
+        
+        if templates:
+            # Try to find matching template and get MAC address
+            vm_mac = get_vm_mac_address(vm_name)
+            if vm_mac:
+                logger.info(f"Retrieved MAC address for VM {vm_name}: {vm_mac}")
+                # Find matching template
+                matching_template = find_matching_template(vm_name, templates)
+                if matching_template:
+                    dhcp_server_id = matching_template.get('dhcp_server_id')
+                    if dhcp_server_id:
+                        logger.info(f"Found matching template for VM {vm_name}")
+                    else:
+                        logger.warning(f"Matching template found but no DHCP server ID for VM {vm_name}")
+                else:
+                    logger.warning(f"No matching template found for VM {vm_name}")
+            else:
+                logger.warning(f"Could not retrieve MAC address for VM {vm_name}")
+
+        # Now proceed with VM removal
         result = remove_vm(VM(name=vm_name, template_id=None))
         
         if "has been stopped and removed" in result:
             logger.info(f"Successfully removed VM {vm_name} (ID: {vm_id})")
+            
+            # Handle DHCP reservation removal if we have the necessary information
+            if vm_mac and dhcp_server_id:
+                try:
+                    fortigate.remove_dhcp_reservations(vm_mac, dhcp_server_id)
+                    logger.info(f"Successfully removed DHCP reservation for {vm_name}")
+                except Exception as e:
+                    logger.error(f"Failed to remove DHCP reservation for {vm_name}: {str(e)}")
+            
+            # Remove from scheduled deletions
             with deletion_lock:
                 if vm_name in vms_scheduled_for_deletion:
                     del vms_scheduled_for_deletion[vm_name]
@@ -225,15 +266,32 @@ def check_scheduled_deletions():
             logger.error(f"Failed to remove VM {vm_name} (ID: {vm_id}). Result: {result}")
 
 def get_scheduled_deletions():
-    """Get the current list of scheduled deletions."""
+    """Get the current list of scheduled deletions and VMs due for removal."""
+    today = date.today()
+    total_due = 0
+    due_vms = []
+    
     with deletion_lock:
-        return {
+        scheduled_deletions = {
             vm_name: {
                 'id': info['id'],
                 'end_date': info['end_date'].strftime('%d-%m-%Y'),
                 'deletion_date': info['deletion_date'].strftime('%d-%m-%Y')
             }
             for vm_name, info in vms_scheduled_for_deletion.items()
+        }
+        
+        # Get VMs due for deletion
+        due_vms = [
+            {'name': vm_name, 'info': info}
+            for vm_name, info in vms_scheduled_for_deletion.items()
+            if info['deletion_date'] <= today
+        ]
+        
+        return {
+            "scheduled_deletions": scheduled_deletions,
+            "total_due": len(due_vms),
+            "due_vms": due_vms
         }
 
 def clear_scheduled_deletions():
@@ -327,13 +385,13 @@ def schedule_daily_check():
     schedule.every().day.at("03:00").do(run_schedule_update)
     # Check VMs to start at 3:30 AM
     schedule.every().day.at("03:30").do(run_start_check)
-    # Process deletions at 4:00 AM
-    schedule.every().day.at("04:00").do(run_deletion_check)
+    # Remove due VMs at 4:00 AM
+    schedule.every().day.at("04:00").do(remove_due_vms)
     
     logger.info("Daily tasks scheduled: "
                 "schedule update at 3:00 AM, "
                 "VM start check at 3:30 AM, "
-                "deletion check at 4:00 AM")
+                "due VM removal at 4:00 AM")
 
     while True:
         schedule.run_pending()
@@ -789,6 +847,135 @@ def get_all_vm_mac_addresses():
     except Exception as e:
         logger.error(f"Error collecting MAC addresses: {str(e)}")
         return None
+
+def get_training_templates():
+    """
+    Read and return training templates from JSON file.
+    Returns None if file is not found or cannot be parsed.
+    """
+    try:
+        with open("training_templates.json") as file:
+            training_templates = json.load(file)
+            return training_templates
+    except FileNotFoundError:
+        logger.error("training_templates.json file not found.")
+        return None
+    except json.JSONDecodeError:
+        logger.error("Error decoding training_templates.json. Please check the file format.")
+        return None
+    
+def find_matching_template(vm_name, templates):
+    """
+    Find matching template for a VM name.
+    
+    Args:
+        vm_name (str): Name of the VM (e.g., "john-doe-sophos-firewall-basics")
+        templates (list): List of template dictionaries from training_templates.json
+        
+    Returns:
+        dict or None: Matching template or None if no match found
+    """
+    vm_name_lower = vm_name.lower()
+    logger.debug(f"Looking for template match for VM: {vm_name}")
+    
+    for template in templates:
+        # Each template has a list of possible training names that use the same base image
+        template_names = template['name']
+        for template_name in template_names:
+            # Sanitize the template name the same way as the original training name was sanitized
+            sanitized_template = re.sub(r'[^a-zA-Z0-9\s-]', '', template_name)
+            sanitized_template = sanitized_template.replace(' ', '-')
+            sanitized_template = sanitized_template.lower()
+            sanitized_template = sanitized_template.strip('-')
+            
+            # Check if the sanitized template name appears in the VM name
+            if sanitized_template in vm_name_lower:
+                logger.info(f"Found matching template '{template_name}' for VM '{vm_name}'")
+                logger.debug(f"Matched using sanitized template name: {sanitized_template}")
+                return template
+    
+    logger.warning(f"No matching template found for VM '{vm_name}'")
+    return None
+
+def remove_due_vms():
+    """Immediately remove all VMs that are past their deletion date."""
+    logger.info("Starting immediate removal of VMs past their deletion date")
+    removed_vms = []
+    failed_removals = []
+
+    # Get list of due VMs
+    scheduled = get_scheduled_deletions()
+    due_vms = scheduled['due_vms']
+
+    if not due_vms:
+        logger.info("No VMs are currently due for deletion")
+        return {
+            "message": "No VMs are currently due for deletion",
+            "removed_vms": [],
+            "failed_removals": []
+        }
+
+    for vm in due_vms:
+        vm_name = vm['name']
+        info = vm['info']
+        logger.info(f"Attempting to remove due VM {vm_name} (ID: {info['id']})")
+        
+        vmid, node = get_vm_id_and_node(vm_name)
+        if vmid is None or node is None:
+            logger.warning(f"VM '{vm_name}' not found. It may have been already removed.")
+            removed_vms.append(vm_name)
+            with deletion_lock:
+                if vm_name in vms_scheduled_for_deletion:
+                    del vms_scheduled_for_deletion[vm_name]
+            continue
+
+        # Get MAC address before removing the VM
+        vm_mac = None
+        dhcp_server_id = None
+        
+        templates = get_training_templates()
+        if templates:
+            vm_mac = get_vm_mac_address(vm_name)
+            if vm_mac:
+                matching_template = find_matching_template(vm_name, templates)
+                if matching_template:
+                    dhcp_server_id = matching_template.get('dhcp_server_id')
+
+        result = remove_vm(VM(name=vm_name, template_id=None))
+        
+        if "has been stopped and removed" in result:
+            logger.info(f"Successfully removed VM {vm_name} (ID: {info['id']})")
+            
+            # Remove DHCP reserveration at FortiGate
+            if vm_mac and dhcp_server_id:
+                try:
+                    fortigate.remove_dhcp_reservations(vm_mac, dhcp_server_id)
+                    logger.info(f"Successfully removed DHCP reservation for {vm_name}")
+                except Exception as e:
+                    logger.error(f"Failed to remove DHCP reservation for {vm_name}: {str(e)}")
+            
+            removed_vms.append(vm_name)
+            with deletion_lock:
+                if vm_name in vms_scheduled_for_deletion:
+                    del vms_scheduled_for_deletion[vm_name]
+        else:
+            logger.error(f"Failed to remove VM {vm_name} (ID: {info['id']}). Result: {result}")
+            failed_removals.append(vm_name)
+
+    total_due = len(due_vms)
+    total_removed = len(removed_vms)
+    total_failed = len(failed_removals)
+
+    logger.info(f"Due VMs removal process completed. "
+                f"Total due: {total_due}, "
+                f"Successfully removed: {total_removed}, "
+                f"Failed removals: {total_failed}")
+
+    return {
+        "message": f"Removal process completed. {total_removed} VMs removed, {total_failed} failed.",
+        "removed_vms": removed_vms,
+        "failed_removals": failed_removals
+    }
 
 # Start the background check thread
 start_background_check()

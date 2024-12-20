@@ -159,11 +159,8 @@ async def run_vm_start_check():
 async def run_deletion_check():
     """Run only the VM deletion check process."""
     try:
-        pve.check_scheduled_deletions()
-        return {
-            "message": "VM deletion check completed",
-            "timestamp": datetime.now().isoformat()
-        }
+        result = pve.remove_due_vms()
+        return result
     except Exception as e:
         logger.error(f"Error running deletion check: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -187,10 +184,12 @@ async def update_vm_schedules():
 async def get_scheduled_deletions():
     """Get the current list of scheduled deletions."""
     try:
-        scheduled = pve.get_scheduled_deletions()
+        result = pve.get_scheduled_deletions()
         return {
-            "scheduled_deletions": scheduled,
-            "total_scheduled": len(scheduled)
+            "scheduled_deletions": result["scheduled_deletions"],
+            "total_scheduled": len(result["scheduled_deletions"]),
+            "total_due": result["total_due"],
+            "due_vms": result["due_vms"]  # Adding the list of VMs due for deletion
         }
     except Exception as e:
         logger.error(f"Error getting scheduled deletions: {str(e)}")
@@ -208,6 +207,16 @@ async def clear_scheduled_deletions_endpoint():
 @app.post("/api/v1/pve/shutdown-vm/{vm_name}")
 def shutdown_vm(vm_name: str):
     return pve.shutdown_vm(vm_name)
+
+@app.post("/api/v1/pve/remove-due")
+async def remove_due_vms():
+    """Remove all VMs that are past their deletion date."""
+    try:
+        result = pve.remove_due_vms()
+        return result
+    except Exception as e:
+        logger.error(f"Error removing due VMs: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/pve/remove-all-scheduled")
 async def remove_all_scheduled_vms():
