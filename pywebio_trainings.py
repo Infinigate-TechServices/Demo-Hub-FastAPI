@@ -31,17 +31,12 @@ def generate_password(length=12):
     Generate a password avoiding confusing characters like l, I, 1, O, 0.
     Returns a string of the specified length (default 12) containing unambiguous characters.
     """
-    # Define character sets without ambiguous characters
     letters_clear = ''.join(c for c in string.ascii_letters if c not in 'lIoO')
     digits_clear = ''.join(c for c in string.digits if c not in '01')
-    
-    # Combine into one alphabet of unambiguous characters
     alphabet = letters_clear + digits_clear
     
-    # Generate password ensuring at least one letter and one number
     while True:
         password = ''.join(secrets.choice(alphabet) for _ in range(length))
-        # Check if password contains at least one letter and one number
         has_letter = any(c.isalpha() for c in password)
         has_number = any(c.isdigit() for c in password)
         
@@ -54,6 +49,45 @@ SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
 SMTP_USERNAME = os.getenv('SMTP_USERNAME')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')
+
+def prepare_connection_data(connection, connection_group_id, seat_ip_proxmox, seat):
+    """
+    Prepare connection data handling both proxy and direct connections.
+    Ensures output matches GuacamoleConnectionRequest model.
+    """
+    # Prepare the name with replaced placeholders
+    name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
+    
+    # Initialize parameters and attributes dictionaries
+    parameters = {}
+    attributes = {}
+
+    # Add all parameters from the connection
+    excluded_keys = ["connection_name", "protocol", "proxy_hostname", "proxy_port", "direct_connection", "parent_id"]
+    for key, value in connection.items():
+        if key not in excluded_keys:
+            if key == "hostname" and value == "{{guacd_proxy_ip}}":
+                parameters[key] = seat_ip_proxmox
+            else:
+                # Convert to string as Guacamole expects all parameters as strings
+                parameters[key] = str(value) if value is not None else ""
+
+    # Add proxy settings only if this is not a direct connection
+    if not connection.get("direct_connection", False):
+        if "proxy_hostname" in connection and "proxy_port" in connection:
+            attributes["guacd-hostname"] = connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip_proxmox)
+            attributes["guacd-port"] = str(connection["proxy_port"])
+
+    # Construct the final connection data matching the GuacamoleConnectionRequest model
+    connection_data = {
+        "parentIdentifier": str(connection_group_id),  # Ensure this is a string
+        "name": name,
+        "protocol": connection["protocol"],
+        "parameters": parameters,
+        "attributes": attributes if attributes else {}  # Always include attributes, even if empty
+    }
+
+    return connection_data
 
 def sanitize_training_name(name):
     # Remove any characters that aren't alphanumeric, spaces, or hyphens
@@ -567,51 +601,36 @@ def create_training_seats():
                 # Create connections within the new connection group
                 connections = selected_template["connections"]
                 for connection in connections:
-                    connection_name = connection["connection_name"].replace("{{first_name}}", seat["first_name"]).replace("{{last_name}}", seat["last_name"])
-                    
-                    connection_data = {
-                        "parentIdentifier": connection_group_id,
-                        "name": connection_name,
-                        "protocol": connection["protocol"],
-                        "parameters": {},
-                        "attributes": {
-                            "guacd-hostname": connection["proxy_hostname"].replace("{{guacd_proxy_ip}}", seat_ip_proxmox),
-                            "guacd-port": str(connection["proxy_port"])
-                        }
-                    }
-
-                    # Add all parameters from the connection
-                    excluded_keys = ["connection_name", "protocol", "proxy_hostname", "proxy_port"]
-                    for key, value in connection.items():
-                        if key not in excluded_keys:
-                            connection_data["parameters"][key] = str(value) if isinstance(value, bool) else value
-
-                    # Remove empty parameters
-                    connection_data["parameters"] = {k: v for k, v in connection_data["parameters"].items() if v != ""}
-
-                    with put_loading():
-                        try:
-                            # Create connection
-                            response = requests.post(f"{API_BASE_URL}/v2/guacamole/connections", json=connection_data)
-                            response.raise_for_status()
-                            result = response.json()
+                    try:
+                        # Use the new prepare_connection_data function
+                        connection_data = prepare_connection_data(
+                            connection=connection,
+                            connection_group_id=connection_group_id,
+                            seat_ip_proxmox=seat_ip_proxmox,
+                            seat=seat
+                        )
+                        
+                        # Create connection
+                        response = requests.post(f"{API_BASE_URL}/v2/guacamole/connections", json=connection_data)
+                        response.raise_for_status()
+                        result = response.json()
+                        
+                        if 'connection_id' in result:
+                            connection_id = result['connection_id']
                             
-                            if 'connection_id' in result:
-                                connection_id = result['connection_id']
-                                
-                                # Add connection permission
-                                add_connection_data = {
-                                    "username": guacamole_username,
-                                    "connection_id": connection_id
-                                }
-                                response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection", json=add_connection_data)
-                                response.raise_for_status()
-                                
-                                put_success(f"Connection {connection_name} created and added to user {guacamole_username}")
-                            else:
-                                put_error(f"Failed to create connection {connection_name}")
-                        except requests.RequestException as e:
-                            put_error(f"Failed to create or assign connection {connection_name}: {str(e)}")
+                            # Add connection permission
+                            add_connection_data = {
+                                "username": guacamole_username,
+                                "connection_id": connection_id
+                            }
+                            response = requests.post(f"{API_BASE_URL}/v2/guacamole/add-to-connection", json=add_connection_data)
+                            response.raise_for_status()
+                            
+                            put_success(f"Connection {connection_data['name']} created and added to user {guacamole_username}")
+                        else:
+                            put_error(f"Failed to create connection {connection_data['name']}")
+                    except requests.RequestException as e:
+                        put_error(f"Failed to create or assign connection {connection_data['name']}: {str(e)}")
                 
                 # Add user to connection group
                 try:
