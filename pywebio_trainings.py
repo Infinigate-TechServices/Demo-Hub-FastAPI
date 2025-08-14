@@ -176,7 +176,6 @@ def send_deployment_email(ticket_number, deployed_users, proxmox_uris, user_pass
         else:
             body += f"{user}: {password}\n"
 
-    body += "\nIMPORTANT NOTE: Direct access to the Proxmox UI via proxy hosts is currently disabled.\n"
     body += "\nProxmox URIs of student seats for trainer:\n"
     for user, uri in proxmox_uris.items():
         body += f"{user}: {uri}\n"
@@ -404,7 +403,7 @@ def create_training_seats():
         if response.status_code != 200:
             put_error(f"Failed to start VM {vm_name}. Error: {response.text}")
 
-        time.sleep(5)
+        time.sleep(30)
 
         # Step 5: Check if user exists in Authentik, create if not, and add to "Trainingsteilnehmer" group
         current_step += 1
@@ -685,7 +684,9 @@ def create_training_seats():
                 put_error(f"Failed to get MAC address for VM {vm_name}. Error: {response.text}")
         except Exception as e:
             put_error(f"An error occurred while getting MAC address: {str(e)}")
-            
+        
+        time.sleep(10)
+    
         # Step 11: Create DHCP reservation
         current_step += 1
         put_info(f"Creating DHCP reservation for VM {vm_name}... ({current_step}/{total_steps})")
@@ -744,8 +745,7 @@ def create_training_seats():
             logger.error(traceback.format_exc())
             
         current_step += 1
-        put_info(f"Step 12 (Nginx Reverse Proxy) is currently disabled... ({current_step}/{total_steps})")
-        """
+
         put_info(f"Creating or Updating Reverse Proxy Entry for {vm_name}... ({current_step}/{total_steps})")
         try:
             domain_name = f"proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"
@@ -755,7 +755,7 @@ def create_training_seats():
                 "forward_host": seat_ip_proxmox,
                 "forward_port": 8006,
                 "access_list_id": 0,
-                "certificate_id": 13,
+                "certificate_id": 16,
                 "ssl_forced": 1,
                 "caching_enabled": 0,
                 "block_exploits": 1,
@@ -805,7 +805,6 @@ def create_training_seats():
             put_error(f"An error occurred while creating/updating Reverse Proxy Entry: {str(e)}")
 
         time.sleep(2)
-        """
         
         # Still update the proxmox_uris dictionary with the standard format
         domain_name = f"proxmox-{seat['first_name'].lower()}-{seat['last_name'].lower()}.student-access.infinigate-labs.com"

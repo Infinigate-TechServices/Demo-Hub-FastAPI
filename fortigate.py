@@ -111,6 +111,11 @@ def remove_dhcp_reservations(seat_macs, dhcp_server_id):
     if not dhcp_config:
         return 0
 
+    if isinstance(seat_macs, list):
+        seat_macs = [mac.lower() for mac in seat_macs]
+    else:
+        seat_macs = seat_macs.lower()
+
     reserved_addresses = dhcp_config.get('reserved-address', [])
     updated_reservations = [r for r in reserved_addresses if r['mac'] not in seat_macs]
     removed_count = len(reserved_addresses) - len(updated_reservations)

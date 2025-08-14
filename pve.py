@@ -916,6 +916,7 @@ def remove_due_vms():
         }
 
     for vm in due_vms:
+        time.sleep(60)
         vm_name = vm['name']
         info = vm['info']
         logger.info(f"Attempting to remove due VM {vm_name} (ID: {info['id']})")
