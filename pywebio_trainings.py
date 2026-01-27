@@ -245,10 +245,10 @@ def create_training_seats():
     sanitized_training_name = sanitize_training_name(selected_training)
 
     # Request ticket number with validation
-    ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
-    while not re.match(r'^T\d{8}\.\d{4}$', ticket_number):
-        put_error("Invalid ticket number format. Please use the format T20240709.0037.")
-        ticket_number = input("Enter the ticket number (format: T20240709.0037)", required=True)
+    ticket_number = input("Enter the ticket number (format: INF-0000843-TS)", required=True)
+    while not re.match(r'^INF-\d{7}-TS$', ticket_number):
+        put_error("Invalid ticket number format. Please use the format INF-0000843-TS.")
+        ticket_number = input("Enter the ticket number (format: INF-0000843-TS)", required=True)
 
     # Request and validate training dates
     while True:
